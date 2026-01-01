@@ -29,8 +29,7 @@ When you tune to 432Hz, you do not simply create music—you create a sanctuary 
 
 ### 1. Install Audio Driver (Required)
 Resonance captures system audio using the **BlackHole** virtual audio driver. 
-- You can find the installer bundled in the [latest release DMG](https://github.com/Eddy-G/Resonance/releases).
-- Alternatively, install via Homebrew: `brew install blackhole-2ch`.
+- Install via Homebrew: `brew install blackhole-2ch`.
 
 ### 2. Configure Multi-Output Device
 To hear your tuned audio, you must create a Multi-Output device in **Audio MIDI Setup**:
