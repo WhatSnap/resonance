@@ -66,7 +66,26 @@ cat > "${APP_DIR}/Contents/Info.plist" << 'PLIST'
 </plist>
 PLIST
 
+#
+# Gatekeeper note:
+# If the app bundle is not signed as a *bundle* (not just the Mach-O binary),
+# macOS can show: “Resonance is damaged and can’t be opened”.
+# This typically happens when the executable has an ad-hoc signature but the bundle
+# has no sealed resources / Info.plist isn't bound.
+#
+# We fix this by:
+# 1) ensuring the bundle has at least one resource, and
+# 2) ad-hoc signing the whole .app bundle after creating Info.plist.
+#
+echo "🔏 Code signing app bundle (ad-hoc)..."
+echo "Resonance Resources" > "${APP_DIR}/Contents/Resources/Resonance.txt"
+
+# Clear xattrs that can confuse local testing; downloaded builds will still be quarantined,
+# but the error should become a normal Gatekeeper “unidentified developer” prompt instead of “damaged”.
 xattr -cr "${APP_DIR}" || true
+
+codesign --force --deep --sign - "${APP_DIR}"
+codesign --verify --deep --strict "${APP_DIR}"
 
 # Step 3: Download BlackHole
 echo "⬇️ Downloading BlackHole audio driver..."
@@ -189,7 +208,12 @@ TROUBLESHOOTING
   → Make sure your speakers are checked in the Multi-Output Device
 
 • App won't open
-  → Right-click the app → Open → Click "Open" in the dialog
+  → If macOS says “Resonance is damaged and can’t be opened”:
+     1) Open Terminal
+     2) Run:
+        xattr -dr com.apple.quarantine /Applications/Resonance.app
+     3) Try opening Resonance again
+  → Otherwise: Right-click the app → Open → Click "Open" in the dialog
 
 
 ABOUT 432Hz
