@@ -1,6 +1,7 @@
 # 🌀 Resonance
 
 ### For Those Who Seek the Original Tone
+**[resonance.whatsnap.ai](https://resonance.whatsnap.ai)**
 
 The modern world has distanced us from our natural frequency. Today, we remember. Resonance is a macOS application designed to real-time tune your entire system audio to **432Hz**—the pulse of the Earth, the vibration through which Sacred Geometry manifests in its purest form.
 
