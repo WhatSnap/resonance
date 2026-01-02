@@ -5,11 +5,37 @@ import AudioToolbox
 
 @MainActor
 class AudioEngine: ObservableObject {
+    enum PitchMode: String, CaseIterable, Identifiable {
+        case off
+        case hz432
+        case demo
+        
+        var id: String { rawValue }
+        
+        var title: String {
+            switch self {
+            case .off: return "Off (440)"
+            case .hz432: return "432Hz"
+            case .demo: return "Demo"
+            }
+        }
+        
+        /// Cents to apply via NewTimePitch.
+        var pitchCents: Float {
+            switch self {
+            case .off: return 0
+            case .hz432: return Constants.Audio.centsShift
+            case .demo: return -100 // 1 semitone down (obvious A/B)
+            }
+        }
+    }
+    
     @Published var isEnabled = false
     @Published var isStarting = false
     @Published var selectedDeviceID: AudioObjectID = 0
     @Published var availableDevices: [AudioDevice] = []
     @Published var blackHoleAvailable = false
+    @Published var pitchMode: PitchMode = .hz432
     
     /// Tracks if we've already tried to show the setup wizard this session.
     var hasAttemptedAutoSetup = false
@@ -109,9 +135,15 @@ class AudioEngine: ObservableObject {
         try graph.start(
             inputDeviceID: inputID,
             outputDeviceID: outputID,
-            pitchCents: Float(Constants.Audio.centsShift),
+            pitchCents: pitchMode.pitchCents,
             sampleRate: sr
         )
+    }
+
+    func applyPitchMode() throws {
+        // If engine isn't running yet, just store the preference; it'll be applied at start().
+        guard isEnabled else { return }
+        try graph.setPitchCents(pitchMode.pitchCents)
     }
 
     func stop() {

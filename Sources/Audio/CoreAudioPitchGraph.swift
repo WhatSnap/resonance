@@ -11,6 +11,7 @@ final class CoreAudioPitchGraph {
     private var inputUnit: AudioUnit?
     private var timePitchUnit: AudioUnit?
     private var outputUnit: AudioUnit?
+    private var currentPitchCents: Float = 0
 
     // Ring buffer state (Deinterleaved)
     private let ringBufferCapacity: UInt32 = 16384 // frames
@@ -209,6 +210,7 @@ final class CoreAudioPitchGraph {
         try checkNoErr(AudioUnitSetProperty(outputUnit, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Input, 0, &ouFormat, UInt32(MemoryLayout<AudioStreamBasicDescription>.size)), context: "set output input format")
 
         try checkNoErr(AudioUnitSetParameter(timePitchUnit, kNewTimePitchParam_Pitch, kAudioUnitScope_Global, 0, pitchCents, 0), context: "set pitch")
+        currentPitchCents = pitchCents
 
         try checkNoErr(AUGraphConnectNodeInput(graph, timePitchNode, 0, outputNode, 0), context: "connect pitch->output")
 
@@ -266,6 +268,15 @@ final class CoreAudioPitchGraph {
         isRunning = true
     }
 
+    func setPitchCents(_ pitchCents: Float) throws {
+        guard let timePitchUnit else { return }
+        try checkNoErr(
+            AudioUnitSetParameter(timePitchUnit, kNewTimePitchParam_Pitch, kAudioUnitScope_Global, 0, pitchCents, 0),
+            context: "set pitch"
+        )
+        currentPitchCents = pitchCents
+    }
+
     func stop() {
         if let iu = inputUnit {
             _ = AudioOutputUnitStop(iu)
@@ -283,6 +294,7 @@ final class CoreAudioPitchGraph {
         self.graph = nil
         self.timePitchUnit = nil
         self.outputUnit = nil
+        currentPitchCents = 0
         isRunning = false
     }
 

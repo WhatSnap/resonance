@@ -53,6 +53,30 @@ struct MenuBarView: View {
                         }
                     }
                 }
+                
+                HStack {
+                    Text("Tune:")
+                    Picker("", selection: $audioEngine.pitchMode) {
+                        ForEach(AudioEngine.PitchMode.allCases) { mode in
+                            Text(mode.title).tag(mode)
+                        }
+                    }
+                    .labelsHidden()
+                    .onChange(of: audioEngine.pitchMode) { _ in
+                        do {
+                            try audioEngine.applyPitchMode()
+                        } catch {
+                            startErrorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                            showStartError = true
+                        }
+                    }
+                }
+                
+                Text(audioEngine.pitchMode == .hz432
+                     ? "Tip: Try “Demo” to make the change obvious, then switch back to 432Hz."
+                     : "Demo is for verification. Switch back to 432Hz for normal use.")
+                .font(.caption2)
+                .foregroundColor(.secondary)
             } else {
                 // BlackHole not installed warning
                 VStack(spacing: 8) {
