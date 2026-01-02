@@ -182,10 +182,10 @@ STEP 3: Configure Audio (First Time Only)
 1. Open "Audio MIDI Setup" (search in Spotlight)
 2. Click the "+" button at bottom left
 3. Select "Create Multi-Output Device"
-4. Check BOTH:
+4. Check ONLY:
    ☑ BlackHole 2ch
-   ☑ Your speakers/headphones (e.g., MacBook Pro Speakers)
 5. Right-click the Multi-Output Device → "Use This Device for Sound Output"
+   (Or simply select "BlackHole 2ch" directly in System Settings → Sound)
 
 
 STEP 4: Use Resonance
@@ -204,8 +204,8 @@ TROUBLESHOOTING
   → Restart your Mac after installing
 
 • No audio output
-  → Check that Multi-Output Device is set as system output
-  → Make sure your speakers are checked in the Multi-Output Device
+  → Check that Multi-Output Device (or BlackHole 2ch) is set as system output
+  → Ensure Resonance is "Enabled" in the menu bar
 
 • App won't open
   → If macOS says “Resonance is damaged and can’t be opened”:
