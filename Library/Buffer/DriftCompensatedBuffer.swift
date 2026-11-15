@@ -60,14 +60,26 @@ public final class DriftCompensatedBuffer: @unchecked Sendable {
     private let lastWriteTimeBits = UnsafeAtomic<UInt64>.create(0)
     private let lastWriteFrames = UnsafeAtomic<Int>.create(0)
 
-    // Consumer-only state.
-    public private(set) var isPrimed = false
-    public private(set) var currentRatio = 1.0
-    /// The level estimate used by the last render, in frames.
-    public private(set) var estimatedLevel = 0.0
-    private var smoothedFill = 0.0
-    private var phase = 0.0 // position between x0 and x1, in [0, 1)
-    private var x0L: Float = 0, x1L: Float = 0, x0R: Float = 0, x1R: Float = 0
+    /// Consumer-only state. It lives in memory allocated once in `init`, not in stored properties: class stored `var`s
+    /// get dynamic exclusivity checks (`swift_beginAccess`) in release builds, which are runtime calls on the render
+    /// path. `scripts/check-realtime.sh` proves the render and write paths make none.
+    private struct ConsumerState {
+        var isPrimed = false
+        var currentRatio = 1.0
+        var estimatedLevel = 0.0
+        var smoothedFill = 0.0
+        var phase = 0.0 // position between x0 and x1, in [0, 1)
+        var x0L: Float = 0, x1L: Float = 0, x0R: Float = 0, x1R: Float = 0
+    }
+    private let state: UnsafeMutablePointer<ConsumerState>
+
+    /// Whether the consumer is playing (it reached the target once and has not underrun since). Consumer state: read
+    /// it on the consumer thread or after it stops.
+    public var isPrimed: Bool { state.pointee.isPrimed }
+    /// The read ratio of the last render. Consumer state, like `isPrimed`.
+    public var currentRatio: Double { state.pointee.currentRatio }
+    /// The level estimate used by the last render, in frames. Consumer state, like `isPrimed`.
+    public var estimatedLevel: Double { state.pointee.estimatedLevel }
 
     public init(config: DriftBufferConfig) {
         precondition(config.lowWaterFrames > 0 && config.highWaterFrames < config.capacityFrames)
@@ -79,9 +91,13 @@ public final class DriftCompensatedBuffer: @unchecked Sendable {
         scratchR = .allocate(capacity: scratchCapacity)
         scratchL.initialize(repeating: 0, count: scratchCapacity)
         scratchR.initialize(repeating: 0, count: scratchCapacity)
+        state = .allocate(capacity: 1)
+        state.initialize(to: ConsumerState())
     }
 
     deinit {
+        state.deinitialize(count: 1)
+        state.deallocate()
         scratchL.deallocate()
         scratchR.deallocate()
         underruns.destroy()
@@ -150,7 +166,7 @@ public final class DriftCompensatedBuffer: @unchecked Sendable {
 
     private func renderBlock(_ outL: UnsafeMutablePointer<Float>, _ outR: UnsafeMutablePointer<Float>, _ n: Int, _ hostTime: Double) {
         let fill = ring.fillLevel
-        if !isPrimed {
+        if !state.pointee.isPrimed {
             guard fill >= config.targetFillFrames else {
                 outL.update(repeating: 0, count: n)
                 outR.update(repeating: 0, count: n)
@@ -159,21 +175,26 @@ public final class DriftCompensatedBuffer: @unchecked Sendable {
             prime()
         }
 
-        let target = Double(config.targetFillFrames)
-        estimatedLevel = estimateLevel(fill: fill, at: hostTime)
-        smoothedFill += config.fillSmoothing * (estimatedLevel - smoothedFill)
-        let correction = config.correctionGain * (smoothedFill - target) / target
-        currentRatio = 1 + min(max(correction, -config.maxCorrection), config.maxCorrection)
+        // Work on a local copy (registers), stored back once on every exit.
+        var s = state.pointee
+        defer { state.pointee = s }
 
-        let wanted = min(scratchCapacity, Int((phase + Double(n) * currentRatio).rounded(.up)) + 1)
+        let target = Double(config.targetFillFrames)
+        s.estimatedLevel = estimateLevel(fill: fill, at: hostTime)
+        s.smoothedFill += config.fillSmoothing * (s.estimatedLevel - s.smoothedFill)
+        let correction = config.correctionGain * (s.smoothedFill - target) / target
+        let ratio = 1 + min(max(correction, -config.maxCorrection), config.maxCorrection)
+        s.currentRatio = ratio
+
+        let wanted = min(scratchCapacity, Int((s.phase + Double(n) * ratio).rounded(.up)) + 1)
         let available = ring.peek(left: scratchL, right: scratchR, maxFrames: wanted)
         var used = 0
-        var p = phase
+        var p = s.phase
         for i in 0..<n {
             let f = Float(p)
-            outL[i] = x0L + (x1L - x0L) * f
-            outR[i] = x0R + (x1R - x0R) * f
-            p += currentRatio
+            outL[i] = s.x0L + (s.x1L - s.x0L) * f
+            outR[i] = s.x0R + (s.x1R - s.x0R) * f
+            p += ratio
             while p >= 1 {
                 guard used < available else {
                     // Out of input: count it, silence the rest, and wait to re-prime.
@@ -181,27 +202,27 @@ public final class DriftCompensatedBuffer: @unchecked Sendable {
                     (outR + i + 1).update(repeating: 0, count: n - i - 1)
                     ring.advance(by: used)
                     underruns.wrappingIncrement(ordering: .relaxed)
-                    isPrimed = false
+                    s.isPrimed = false
                     return
                 }
-                x0L = x1L; x1L = scratchL[used]
-                x0R = x1R; x1R = scratchR[used]
+                s.x0L = s.x1L; s.x1L = scratchL[used]
+                s.x0R = s.x1R; s.x1R = scratchR[used]
                 used += 1
                 p -= 1
             }
         }
-        phase = p
+        s.phase = p
         ring.advance(by: used)
     }
 
     /// Loads the first two frames into the interpolation window and starts at ratio 1.
     private func prime() {
         _ = ring.read(left: scratchL, right: scratchR, frameCount: 2)
-        x0L = scratchL[0]; x1L = scratchL[1]
-        x0R = scratchR[0]; x1R = scratchR[1]
-        phase = 0
-        smoothedFill = Double(config.targetFillFrames)
-        currentRatio = 1
-        isPrimed = true
+        state.pointee.x0L = scratchL[0]; state.pointee.x1L = scratchL[1]
+        state.pointee.x0R = scratchR[0]; state.pointee.x1R = scratchR[1]
+        state.pointee.phase = 0
+        state.pointee.smoothedFill = Double(config.targetFillFrames)
+        state.pointee.currentRatio = 1
+        state.pointee.isPrimed = true
     }
 }
