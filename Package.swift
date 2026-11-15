@@ -12,8 +12,8 @@ let package = Package(
         .executable(name: "Resonance", targets: ["Resonance"])
     ],
     targets: [
-        .executableTarget(
-            name: "Resonance",
-            path: "Sources"),
+        .target(name: "ResonanceCore", path: "Library"),
+        .executableTarget(name: "Resonance", dependencies: ["ResonanceCore"], path: "Sources"),
+        .testTarget(name: "ResonanceCoreTests", dependencies: ["ResonanceCore"], path: "Tests"),
     ]
 )
