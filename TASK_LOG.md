@@ -2,6 +2,23 @@
 
 Newest first. The lead's notebook (resonance-lead).
 
+## 2026-11-16 — Plan approved, build started (HQ-423)
+
+- **True now:** Luis approved the plan in this window ("go si rearmalo de la mejor manera"). The record of P4N1 was refused
+  by the gate (NO_GO, turn check), so it is re-asked in one line. Plan and dossier are committed on the local branch
+  `hq-423-optimization`.
+- **Issues (children of HQ-423):** HQ-429 tap spike · HQ-430 DSP baseline test · HQ-431 device router · HQ-432
+  lock-free buffer · HQ-433 tap engine (blocked by 429, 431, 432) · HQ-434 settings + opt-in login · HQ-435 cleanup.
+  Signing (step 8) is not filed yet: it gets filed and asked (money) when 435 lands.
+- **In flight:** workers `resonance-build-429`, `-430`, `-431`, `-432`, each on its own branch off
+  `hq-423-optimization`. Shared rules: `~/.hq/work/resonance-lead/briefs/build-common.md` (fixed package layout:
+  `Library/` = ResonanceCore, `Tests/`).
+- **Critical path:** HQ-429 → HQ-433 → Luis's listen check.
+- **Waiting on Luis:** the one-line re-ask of P4N1 (record only). Later: the macOS audio-capture prompt (HQ-429), and the
+  2-minute listen (after HQ-433).
+- **Gate:** each branch lands on `hq-423-optimization` only after a PASS review on the same commit. Luis has admin on
+  the GitHub repo, and the push is still asked.
+
 ## 2026-11-16 — Dossier done, plan proposed, waiting on Luis (HQ-423)
 
 - **True now:** the dossier `./docs/research/2026-11-16/resonance-audio-routing.md` is written (worker closed). Root
