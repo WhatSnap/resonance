@@ -172,6 +172,11 @@ final class LoopbackMonitor: @unchecked Sendable {
         return samples.count
     }
 
+    func samples(from start: Int, count: Int) -> [Float] {
+        lock.lock(); defer { lock.unlock() }
+        return Self.slice(samples, start, count)
+    }
+
     func level(from start: Int, seconds: Double, frequency: Double, rate: Double) -> Double {
         lock.lock(); let slice = Self.slice(samples, start, Int(seconds * rate)); lock.unlock()
         return SignalAnalysis.magnitude(at: frequency, in: slice, sampleRate: rate)
