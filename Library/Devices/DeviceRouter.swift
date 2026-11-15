@@ -59,6 +59,9 @@ public final class DeviceRouter {
     public var onRebind: ((OutputTarget) -> Void)?
     /// Called after a wake, with the target the router resolved (nil if no usable output).
     public var onHealthCheck: ((OutputTarget?) -> Void)?
+    /// Called once when the current output is gone and no usable default exists yet. `current` becomes nil, so the
+    /// next usable target (even the same device coming back) arrives as an `onRebind`.
+    public var onOutputLost: (() -> Void)?
 
     public private(set) var current: OutputTarget?
     public var isHeadsetMode: Bool { current?.isHeadsetProfile ?? false }
@@ -108,9 +111,16 @@ public final class DeviceRouter {
             wakePending = false
             onHealthCheck?(target)
         }
-        // No usable default yet (e.g. the HAL still names a device that just died): keep the current binding and
-        // wait for the next event.
-        guard let target, target != current else { return }
+        // No usable default yet (e.g. the HAL still names a device that just died): drop the binding, say so once,
+        // and wait for the next event.
+        guard let target else {
+            if current != nil {
+                current = nil
+                onOutputLost?()
+            }
+            return
+        }
+        guard target != current else { return }
         current = target
         onRebind?(target)
     }
