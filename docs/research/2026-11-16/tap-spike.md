@@ -94,3 +94,25 @@ not granted, so the engine must tell "no permission" apart from "broken tap" bef
 - A real all-zero failure was not reproduced; the rebuild was exercised on a working tap only.
 - A tap and its child device at different rates (here all ran at 48 kHz).
 - Taps of a global mixdown (excluding Resonance), which step 5 needs. Never run without warning Luis: it mutes his audio.
+
+## Step 0 of HQ-433: mute behavior settled (2026-11-16)
+
+Harness: `./Tests/Tap/MuteBehaviorStepZeroTests.swift` (`RESONANCE_TAP_SPIKE=1`), BlackHole child only, 997 Hz at 0.25.
+Default output `BuiltInSpeakerDevice` before and after. Tone level on the child's device, reference with no tap 0.250.
+
+| Check | `muted` | `mutedWhenTapped` |
+|---|---|---|
+| Tap held by another process, while it reads | 0 | 0 |
+| That process killed with SIGKILL: first 100 ms window | 0.170 | 0.170 |
+| Windows 2 to 20 after the kill | 0.250 | 0.250 |
+| In-process start: first 100 ms window | 0.107 | 0.160 |
+| Windows 2 to 20 after start | exactly 0 | exactly 0 |
+| After stop | 0.250 | 0.250 |
+
+Reading: Core Audio drops a dead client's tap at once, so `muted` never leaves the user in silence after a crash. The
+`mutedWhenTapped` residue in the spike was the start transient only (first window), not a steady leak.
+
+**Decision (lead's default, both checks passed): `muted`, with the output started first and the tap created last.**
+
+Also measured: an aggregate holding only the tap (no clock sub-device) runs and carries the tone (RMS 0.174 for an
+ideal 0.177). The engine uses that shape, so the capture clock does not depend on the output device.
