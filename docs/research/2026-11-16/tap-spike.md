@@ -1,7 +1,7 @@
 # Tap spike: capturing a muted child process (HQ-429)
 
-Plan step 1 of `./docs/plans/2026-11-16-optimization-plan.md`. Status: **code and silent tests done; the capture run
-is waiting for the System Audio Recording permission.** The observed values below are filled in after that run.
+Plan step 1 of `./docs/plans/2026-11-16-optimization-plan.md`. Status: **done.** The capture run passed on
+2026-11-16 on Luis's Mac (macOS 26.4), once, after he granted the System Audio Recording permission.
 
 ## What was built
 
@@ -37,15 +37,39 @@ BlackHole loops its output back to its input, and the aggregate exposes BlackHol
 A reference loopback level is taken before any tap exists. For `mutedWhenTapped`, the loopback is also read with the
 tap created but IO not started.
 
+## Run results (2026-11-16)
+
+| Check | Result |
+|---|---|
+| Captured RMS (sine amplitude 0.25, ideal 0.177) | 0.1767 muted, 0.1765 unmuted, 0.1767 mutedWhenTapped |
+| FFT peak (tone 997 Hz) | 997.011 Hz in all three runs |
+| System default output before / after | `BuiltInSpeakerDevice` / `BuiltInSpeakerDevice` |
+| Mute behavior reported by the live tap | equal to the one set, for all three |
+| Capture after `rebuild()` (muted) | RMS 0.1767 |
+| Rates | BlackHole 48 kHz, aggregate 48 kHz, tap format 48 kHz |
+| Aggregate input layout | buffer 0 = BlackHole input (2 ch), buffer 1 = tap (2 ch, interleaved) |
+
+A process playing to a **non-default** device (BlackHole) is captured: the stereo-mixdown tap follows the process,
+not the default output.
+
 ## Mute behavior, as observed
 
-Pending the run. Expected from the dossier, unconfirmed:
+Tone level the child's device receives (BlackHole loopback at 997 Hz). Reference with no tap: 0.250.
 
 | Behavior | Tap captures | Child heard on its device |
 |---|---|---|
-| `unmuted` | yes | yes |
-| `muted` | yes | no, while the tap exists |
-| `mutedWhenTapped` | yes | no while the tap is read; yes while it exists but is idle |
+| `unmuted` | yes | yes: 0.250 |
+| `muted` | yes | **no: exactly 0** while the tap exists and is read |
+| `mutedWhenTapped` | yes | **yes while the tap exists but is idle (0.250)**; almost silent while it is read (0.0045, about 2% of the level, -35 dB) |
+
+Reading: `muted` silences the process as soon as the tap exists and leaves exact zeros. `mutedWhenTapped`
+silences it only while some client reads the tap, and in our 2 s window a small residue remained. That residue is
+most likely the time between `AudioDeviceStart` and the first IO cycle reaching the tap, but this was not isolated.
+
+**For the engine (step 5):** use `mutedWhenTapped`. If the app stops reading (crash, rebind, teardown), the original
+audio comes back by itself instead of leaving the user in silence. Accept a short overlap of original audio at each
+start. If that overlap turns out audible on Luis's listen check, switch to `muted` and make sure every exit path
+destroys the tap.
 
 ## Recovery from all-zero buffers
 
@@ -65,6 +89,8 @@ not granted, so the engine must tell "no permission" apart from "broken tap" bef
 
 ## Not verified yet
 
-- Every row of the mute table and the rebuild assertion: they need the permission run.
-- Whether the tap's own format rate differs from the aggregate rate when the child's device runs at another rate.
-- Whether a tap of a process playing to a non-default device is captured at all on 26.4 (the spike answers it).
+- The `mutedWhenTapped` residue: whether it is only the start-up gap, or a steady leak. A test that measures the
+  loopback in 100 ms windows after start would settle it.
+- A real all-zero failure was not reproduced; the rebuild was exercised on a working tap only.
+- A tap and its child device at different rates (here all ran at 48 kHz).
+- Taps of a global mixdown (excluding Resonance), which step 5 needs. Never run without warning Luis: it mutes his audio.
