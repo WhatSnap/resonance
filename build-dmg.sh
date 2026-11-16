@@ -19,73 +19,9 @@ BLACKHOLE_PKG_URL="https://existential.audio/downloads/BlackHole2ch-0.6.1.pkg"
 BLACKHOLE_PKG_SHA256="c829afa041a9f6e1b369c01953c8f079740dd1f02421109855829edc0d3c1988"
 BLACKHOLE_PKG_FILENAME="BlackHole2ch-0.6.1.pkg"
 
-# Step 1: Build
-echo "📦 Compiling release build..."
-swift build -c release
-
-# Step 2: Create .app bundle
-echo "📱 Creating app bundle..."
-rm -rf "${APP_DIR}"
-mkdir -p "${APP_DIR}/Contents/MacOS"
-mkdir -p "${APP_DIR}/Contents/Resources"
-
-cp ".build/release/Resonance" "${APP_DIR}/Contents/MacOS/${APP_NAME}"
-chmod +x "${APP_DIR}/Contents/MacOS/${APP_NAME}"
-
-# Create Info.plist
-cat > "${APP_DIR}/Contents/Info.plist" << 'PLIST'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>CFBundleName</key>
-    <string>Resonance</string>
-    <key>CFBundleDisplayName</key>
-    <string>Resonance</string>
-    <key>CFBundleIdentifier</key>
-    <string>com.resonance.app</string>
-    <key>CFBundleVersion</key>
-    <string>1.0.0</string>
-    <key>CFBundleShortVersionString</key>
-    <string>1.0</string>
-    <key>CFBundleExecutable</key>
-    <string>Resonance</string>
-    <key>CFBundlePackageType</key>
-    <string>APPL</string>
-    <key>LSMinimumSystemVersion</key>
-    <string>13.0</string>
-    <key>LSUIElement</key>
-    <true/>
-    <key>NSHighResolutionCapable</key>
-    <true/>
-    <key>NSMicrophoneUsageDescription</key>
-    <string>Resonance needs audio access to convert system audio to 432Hz tuning.</string>
-    <key>NSPrincipalClass</key>
-    <string>NSApplication</string>
-</dict>
-</plist>
-PLIST
-
-#
-# Gatekeeper note:
-# If the app bundle is not signed as a *bundle* (not just the Mach-O binary),
-# macOS can show: “Resonance is damaged and can’t be opened”.
-# This typically happens when the executable has an ad-hoc signature but the bundle
-# has no sealed resources / Info.plist isn't bound.
-#
-# We fix this by:
-# 1) ensuring the bundle has at least one resource, and
-# 2) ad-hoc signing the whole .app bundle after creating Info.plist.
-#
-echo "🔏 Code signing app bundle (ad-hoc)..."
-echo "Resonance Resources" > "${APP_DIR}/Contents/Resources/Resonance.txt"
-
-# Clear xattrs that can confuse local testing; downloaded builds will still be quarantined,
-# but the error should become a normal Gatekeeper “unidentified developer” prompt instead of “damaged”.
-xattr -cr "${APP_DIR}" || true
-
-codesign --force --deep --sign - "${APP_DIR}"
-codesign --verify --deep --strict "${APP_DIR}"
+# Steps 1-2: build and sign the app bundle (scripts/build-app.sh holds the Info.plist and signing).
+echo "📦 Building app bundle..."
+"$(dirname "$0")/scripts/build-app.sh" "${DESKTOP_PATH}" >/dev/null
 
 # Step 3: Download BlackHole
 echo "⬇️ Downloading BlackHole audio driver..."

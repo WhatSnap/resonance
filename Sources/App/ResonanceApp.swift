@@ -1,27 +1,17 @@
+import ResonanceCore
 import SwiftUI
 
 @main
 struct ResonanceApp: App {
-    @StateObject private var audioEngine = AudioEngine()
-    
+    @StateObject private var model = LiveEngine.makeModel()
+
     var body: some Scene {
         MenuBarExtra {
             MenuBarView()
-                .environmentObject(audioEngine)
+                .environmentObject(model)
         } label: {
-            Image(systemName: audioEngine.isEnabled ? "waveform.circle.fill" : "waveform.circle")
+            Image(systemName: model.isEnabled ? "waveform.circle.fill" : "waveform.circle")
         }
         .menuBarExtraStyle(.window)
-        
-        Settings {
-            PreferencesView()
-                .environmentObject(audioEngine)
-        }
-        
-        Window("Resonance Setup", id: "setup") {
-            SetupView()
-        }
-        .windowStyle(.hiddenTitleBar)
-        .windowResizability(.contentSize)
     }
 }
