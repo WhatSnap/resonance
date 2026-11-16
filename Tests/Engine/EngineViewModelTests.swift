@@ -30,7 +30,7 @@ struct EngineViewModelTests {
         #expect(model.statusText == "On")
     }
 
-    @Test("an error after start (during a device change) shows in the menu and the switch stays on")
+    @Test("an error after start (during a device change) shows in the menu; the switch stays on and the status agrees")
     func runtimeErrorShows() {
         let h = EngineHarness()
         let model = EngineViewModel(engine: h.engine)
@@ -40,6 +40,12 @@ struct EngineViewModelTests {
         h.settle()
         #expect(model.isEnabled)
         #expect(model.errorMessage == "AirPods not ready")
+        #expect(model.statusText == EngineViewModel.interruptedStatus)
+        // The engine retries at the next device change and the status follows.
+        h.output.failStart = nil
+        h.provider.setDefault(speakers.id)
+        h.settle()
+        #expect(model.isEnabled && model.statusText == "On")
     }
 
     @Test("headset profile and no output show as paused states")

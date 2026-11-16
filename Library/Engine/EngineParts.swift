@@ -6,10 +6,15 @@ public struct CaptureHealth: Equatable, Sendable {
     public var signalSeen: Bool
     /// Length of the current run of exactly-zero buffers, in seconds.
     public var silentSeconds: Double
+    /// Whether any captured process is running audio output right now. Lets the watchdog tell a stale tap (zeros while
+    /// something plays) from a pause (zeros because nothing plays). Only meaningful during a run of zeros; `true` when
+    /// unknown, so an unreadable process list falls back to the capped rebuilds.
+    public var othersPlaying: Bool
 
-    public init(signalSeen: Bool, silentSeconds: Double) {
+    public init(signalSeen: Bool, silentSeconds: Double, othersPlaying: Bool = true) {
         self.signalSeen = signalSeen
         self.silentSeconds = silentSeconds
+        self.othersPlaying = othersPlaying
     }
 }
 

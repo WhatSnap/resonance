@@ -15,6 +15,9 @@ public final class EngineViewModel: ObservableObject {
         }
     }
 
+    /// The status while the switch is on and the engine stopped on an error: it retries at the next device change.
+    public static let interruptedStatus = "Interrupted, retrying at the next device change"
+
     private let engine: ShiftEngine
     /// Saves only what the user chose (the switch, the tuning). Engine pauses and quitting never write here.
     private let settings: SettingsStore?
@@ -83,7 +86,7 @@ public final class EngineViewModel: ObservableObject {
         case .waitingForOutput:
             statusText = "Waiting for an output device"
         case .failed(let message):
-            statusText = "Stopped"
+            statusText = isEnabled ? Self.interruptedStatus : "Stopped"
             errorMessage = message
         }
     }
