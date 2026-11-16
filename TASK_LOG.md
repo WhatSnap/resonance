@@ -2,6 +2,19 @@
 
 Newest first. The lead's notebook (resonance-lead).
 
+## 2026-11-16 20:20Z — Every build issue landed; the final app is open on Luis's Mac
+
+- **True now:** on `hq-423-optimization` (a548cf9, local, not pushed): HQ-429, 430, 431, 432, 433, 434 (Library +
+  wiring), 435 (cleanup, DMG 2.0), 448 (watchdog), 450 (a window on open), 451 (launch crash: the delegate had no
+  `override init()` for `@NSApplicationDelegateAdaptor`). Each landed after a PASS review on its commit. The final app is
+  `~/.hq/work/resonance-build-451-2/app/Resonance.app`, and it is running for Luis. The 1.0 is still in `/Applications`.
+- **Gotchas:** the support profile hit its rate limit at about 18:00Z and its workers hung silently; reopen them with
+  `--profile gmail`. The Linear MCP is unauthenticated on gmail; use `~/.hq/work/resonance-lead/linear-comment.py` through
+  `hq secret run linear`.
+- **Waiting on Luis:** L5S3, the listen check (card updated to the final app); S8G4, the signing choice (money).
+- **Next after L5S3 ok:** replace `/Applications/Resonance.app` (1.0) with 2.0, keeping a backup of 1.0. Ask Luis for
+  the push of `hq-423-optimization` and a PR to WhatSnap/resonance (red: push). Then HQ-446 per S8G4.
+
 ## 2026-11-16 13:20Z — Engine landed; Luis's listen check open (HQ-433)
 
 - **True now:** HQ-433 (tap engine, PASS on 846887a) and the HQ-434 Library part (PASS on a12204b) have landed on
