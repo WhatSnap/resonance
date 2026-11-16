@@ -9,14 +9,20 @@ public final class EngineViewModel: ObservableObject {
     @Published public private(set) var errorMessage: String?
     @Published public private(set) var notice: String?
     @Published public var pitchMode: PitchMode = .hz432 {
-        didSet { engine.setPitchCents(pitchMode.pitchCents) }
+        didSet {
+            engine.setPitchCents(pitchMode.pitchCents)
+            settings?.pitchMode = pitchMode
+        }
     }
 
     private let engine: ShiftEngine
+    /// Saves only what the user chose (the switch, the tuning). Engine pauses and quitting never write here.
+    private let settings: SettingsStore?
     private var onShutdown: (() -> Void)?
 
-    public init(engine: ShiftEngine, onShutdown: (() -> Void)? = nil) {
+    public init(engine: ShiftEngine, settings: SettingsStore? = nil, onShutdown: (() -> Void)? = nil) {
         self.engine = engine
+        self.settings = settings
         self.onShutdown = onShutdown
         engine.setPitchCents(pitchMode.pitchCents)
         engine.onStateChange = { [weak self] state in self?.show(state) }
@@ -24,7 +30,23 @@ public final class EngineViewModel: ObservableObject {
         show(engine.state)
     }
 
+    /// The user's switch. Saves the result, so the next launch comes back the same way.
     public func setEnabled(_ on: Bool) {
+        apply(on)
+        settings?.isEnabled = isEnabled
+    }
+
+    /// At launch: puts back the saved tuning and, if it was on, starts. Both values are read before anything is
+    /// assigned. A failed start shows its error and leaves the saved state for the user's next action.
+    public func restore() {
+        guard let settings else { return }
+        let wasEnabled = settings.isEnabled
+        let savedMode = settings.pitchMode
+        pitchMode = savedMode
+        if wasEnabled { apply(true) }
+    }
+
+    private func apply(_ on: Bool) {
         if on {
             errorMessage = nil
             do {

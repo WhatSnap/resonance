@@ -5,6 +5,7 @@ import SwiftUI
 /// uses, so there is no device picker.
 struct MenuBarView: View {
     @EnvironmentObject var model: EngineViewModel
+    @EnvironmentObject var openAtLogin: OpenAtLoginModel
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -49,6 +50,18 @@ struct MenuBarView: View {
 
             Divider()
 
+            Toggle("Open at login", isOn: Binding(get: { openAtLogin.isOn }, set: { openAtLogin.set($0) }))
+                .toggleStyle(.switch)
+                .controlSize(.small)
+            if let error = openAtLogin.errorMessage {
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundColor(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Divider()
+
             HStack {
                 Spacer()
                 Button("Quit") {
@@ -60,5 +73,10 @@ struct MenuBarView: View {
         }
         .padding()
         .frame(width: 280)
+        // The menu window may be kept between openings, so read the login item again each time it comes up.
+        .onAppear { openAtLogin.refresh() }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
+            openAtLogin.refresh()
+        }
     }
 }
