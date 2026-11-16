@@ -29,24 +29,15 @@ struct MainWindowView: View {
     }
 }
 
-/// Builds the window once and brings it to the front each time it is asked for. Closing only hides it.
+/// Builds the window once and brings it to the front each time it is asked for. Closing only hides it. While it is
+/// open the app has a Dock icon (HQ-457, `MainWindowPresenter`).
 @MainActor
-final class MainWindowController {
-    static let shared = MainWindowController()
+enum MainWindowController {
+    static let shared = MainWindowPresenter(makeWindow: makeWindow)
 
-    private var window: NSWindow?
-
-    func show() {
-        let window = self.window ?? makeWindow()
-        self.window = window
-        NSApp.activate()
-        window.makeKeyAndOrderFront(nil)
-    }
-
-    private func makeWindow() -> NSWindow {
+    private static func makeWindow() -> NSWindow {
         let window = NSWindow(contentRect: .zero, styleMask: [.titled, .closable], backing: .buffered, defer: false)
         window.title = "Resonance"
-        window.isReleasedWhenClosed = false
         window.contentView = NSHostingView(rootView: MainWindowView())
         window.setContentSize(window.contentView?.fittingSize ?? NSSize(width: 280, height: 300))
         window.center()
