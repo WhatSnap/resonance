@@ -16,11 +16,12 @@ enum LiveEngine {
             capture = UnsupportedCapture()
         }
         let engine = ShiftEngine(capture: capture, output: HALOutput(), router: router, scheduler: scheduler)
-        let model = EngineViewModel(engine: engine, onShutdown: { provider.invalidate() })
+        let model = EngineViewModel(engine: engine, settings: SettingsStore(), onShutdown: { provider.invalidate() })
         NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil,
                                                queue: .main) { _ in
             MainActor.assumeIsolated { model.shutdown() }
         }
+        model.restore()
         return model
     }
 }
