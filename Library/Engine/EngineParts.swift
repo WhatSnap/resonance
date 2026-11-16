@@ -1,3 +1,5 @@
+import CoreAudio
+
 /// What the capture side reports to the silence watchdog.
 public struct CaptureHealth: Equatable, Sendable {
     /// Whether any non-zero buffer arrived since this tap was created.
@@ -49,4 +51,12 @@ public enum EngineState: Equatable, Sendable {
     case waitingForOutput
     /// Stopped by an error. When it happened during a device change, the next change retries.
     case failed(String)
+}
+
+/// The `i`-th buffer of an AudioBufferList, by raw offset. Real-time safe, unlike
+/// `UnsafeMutableAudioBufferListPointer`, whose generic collection code calls into the Swift runtime.
+@inline(__always)
+func audioBuffer(_ list: UnsafePointer<AudioBufferList>, _ index: Int) -> AudioBuffer {
+    let offset = MemoryLayout<AudioBufferList>.size - MemoryLayout<AudioBuffer>.size
+    return (UnsafeRawPointer(list) + offset).assumingMemoryBound(to: AudioBuffer.self)[index]
 }

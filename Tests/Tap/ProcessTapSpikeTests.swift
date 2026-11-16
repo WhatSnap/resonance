@@ -4,96 +4,98 @@ import Foundation
 import Testing
 @testable import ResonanceCore
 
-/// HQ-429 spike: tap a child process that plays a sine, with that process muted.
-///
-/// Off by default, because the first tap triggers the System Audio Recording prompt.
-/// Enabled with `RESONANCE_TAP_SPIKE=1`. Findings (JSON) go to `RESONANCE_TAP_SPIKE_OUT` when set.
-///
-/// Silence: the child plays only to BlackHole 2ch (a virtual device), never to the default output.
-/// The aggregate is clocked by BlackHole, and its output buffers are never written. The test refuses to run
-/// while the Resonance app is open, because that app plays BlackHole's input on the speakers.
-@Suite(.enabled(if: ProcessInfo.processInfo.environment["RESONANCE_TAP_SPIKE"] == "1"), .serialized)
-struct ProcessTapSpikeTests {
-    static let blackHoleUID = "BlackHole2ch_UID"
-    static let toneHz = 997.0
+extension BlackHoleSuites {
+    /// HQ-429 spike: tap a child process that plays a sine, with that process muted.
+    ///
+    /// Off by default, because the first tap triggers the System Audio Recording prompt.
+    /// Enabled with `RESONANCE_TAP_SPIKE=1`. Findings (JSON) go to `RESONANCE_TAP_SPIKE_OUT` when set.
+    ///
+    /// Silence: the child plays only to BlackHole 2ch (a virtual device), never to the default output.
+    /// The aggregate is clocked by BlackHole, and its output buffers are never written. The test refuses to run
+    /// while the Resonance app is open, because that app plays BlackHole's input on the speakers.
+    @Suite(.enabled(if: ProcessInfo.processInfo.environment["RESONANCE_TAP_SPIKE"] == "1"), .serialized)
+    struct ProcessTapSpikeTests {
+        static let blackHoleUID = "BlackHole2ch_UID"
+        static let toneHz = 997.0
 
-    @Test func capturesMutedChildProcess() async throws {
-        guard #available(macOS 14.4, *) else { return }
-        let appRunning = try SpikeSupport.resonanceAppIsRunning()
-        try #require(!appRunning, "Quit the Resonance app first: it plays BlackHole on the speakers.")
-        let blackHoleLookup = try CoreAudioObjects.device(withUID: Self.blackHoleUID)
-        let blackHole = try #require(blackHoleLookup, "BlackHole 2ch is required as a silent sink")
+        @Test func capturesMutedChildProcess() async throws {
+            guard #available(macOS 14.4, *) else { return }
+            let appRunning = try SpikeSupport.resonanceAppIsRunning()
+            try #require(!appRunning, "Quit the Resonance app first: it plays BlackHole on the speakers.")
+            let blackHoleLookup = try CoreAudioObjects.device(withUID: Self.blackHoleUID)
+            let blackHole = try #require(blackHoleLookup, "BlackHole 2ch is required as a silent sink")
 
-        let defaultBefore = try CoreAudioObjects.defaultOutputDevice()
-        var findings = SpikeFindings()
-        findings.defaultOutputBefore = try CoreAudioObjects.uid(of: defaultBefore)
-        findings.blackHoleRate = try CoreAudioObjects.nominalSampleRate(of: blackHole)
+            let defaultBefore = try CoreAudioObjects.defaultOutputDevice()
+            var findings = SpikeFindings()
+            findings.defaultOutputBefore = try CoreAudioObjects.uid(of: defaultBefore)
+            findings.blackHoleRate = try CoreAudioObjects.nominalSampleRate(of: blackHole)
 
-        let child = try SpikeSupport.launchSineChild(deviceUID: Self.blackHoleUID, frequency: Self.toneHz, seconds: 60)
-        defer { child.terminate(); child.waitUntilExit() }
-        let processLookup = try await SpikeSupport.waitForProcessObject(pid: child.processIdentifier)
-        let process = try #require(processLookup, "child never registered with Core Audio")
+            let child = try SpikeSupport.launchSineChild(deviceUID: Self.blackHoleUID, frequency: Self.toneHz, seconds: 60)
+            defer { child.terminate(); child.waitUntilExit() }
+            let processLookup = try await SpikeSupport.waitForProcessObject(pid: child.processIdentifier)
+            let process = try #require(processLookup, "child never registered with Core Audio")
 
-        // Reference: BlackHole's own loopback with no tap at all. This is what "audible" looks like.
-        findings.loopbackNoTap = try await SpikeSupport.loopbackToneLevel(device: blackHole, frequency: Self.toneHz)
+            // Reference: BlackHole's own loopback with no tap at all. This is what "audible" looks like.
+            findings.loopbackNoTap = try await SpikeSupport.loopbackToneLevel(device: blackHole, frequency: Self.toneHz)
 
-        for behavior in [CATapMuteBehavior.muted, .unmuted, .mutedWhenTapped] {
-            let capture = ProcessTapCapture(configuration: .init(
-                processes: [process], muteBehavior: behavior, clockDeviceUID: Self.blackHoleUID, name: "Resonance Spike"))
-            var run = SpikeRun(behavior: SpikeFindings.name(behavior))
+            for behavior in [CATapMuteBehavior.muted, .unmuted, .mutedWhenTapped] {
+                let capture = ProcessTapCapture(configuration: .init(
+                    processes: [process], muteBehavior: behavior, clockDeviceUID: Self.blackHoleUID, name: "Resonance Spike"))
+                var run = SpikeRun(behavior: SpikeFindings.name(behavior))
 
-            if behavior == .mutedWhenTapped {
-                // Tap exists, IO not started: is the child muted yet?
-                try capture.create()
-                run.loopbackTapCreatedIdle = try await SpikeSupport.loopbackToneLevel(device: blackHole, frequency: Self.toneHz)
+                if behavior == .mutedWhenTapped {
+                    // Tap exists, IO not started: is the child muted yet?
+                    try capture.create()
+                    run.loopbackTapCreatedIdle = try await SpikeSupport.loopbackToneLevel(device: blackHole, frequency: Self.toneHz)
+                }
+
+                let recorder = SpikeRecorder()
+                try capture.start(queue: DispatchQueue(label: "spike.tap", qos: .userInitiated)) { list, _ in
+                    recorder.append(list)
+                }
+                let applied = try capture.appliedMuteBehavior()
+                #expect(applied == behavior, "the tap reports the mute behavior it was given")
+                let rate = try CoreAudioObjects.nominalSampleRate(of: capture.aggregateID)
+                run.aggregateRate = rate
+                run.tapFormatRate = capture.tapFormat?.mSampleRate ?? 0
+                run.bufferLayout = try CoreAudioObjects.bufferChannelCounts(of: capture.aggregateID, scope: kAudioObjectPropertyScopeInput)
+                run.tapBuffers = Array(capture.tapBufferRange)
+
+                try await Task.sleep(for: .seconds(2))
+                let snapshot = recorder.drain()
+                let tap = snapshot.mono(buffers: capture.tapBufferRange)
+                let loopback = snapshot.mono(buffers: capture.clockBufferRange)
+                run.tapRMS = SignalAnalysis.rms(tap)
+                run.tapPeakHz = SignalAnalysis.peakFrequency(tap, sampleRate: rate) ?? 0
+                run.loopbackWhileTapped = SignalAnalysis.magnitude(at: Self.toneHz, in: loopback, sampleRate: rate)
+
+                #expect(run.tapRMS > 0, "captured audio has RMS above 0 (\(run.behavior))")
+                #expect(abs(run.tapPeakHz - Self.toneHz) <= 1, "FFT peak \(run.tapPeakHz) Hz within 1 Hz (\(run.behavior))")
+
+                if behavior == .muted {
+                    // Recovery path: full teardown and rebuild, then capture again.
+                    try capture.rebuild()
+                    try await Task.sleep(for: .seconds(1))
+                    let rebuilt = recorder.drain().mono(buffers: capture.tapBufferRange)
+                    run.rmsAfterRebuild = SignalAnalysis.rms(rebuilt)
+                    #expect(run.rmsAfterRebuild > 0, "capture works again after a rebuild")
+                }
+                capture.stop()
+                findings.runs.append(run)
             }
 
-            let recorder = SpikeRecorder()
-            try capture.start(queue: DispatchQueue(label: "spike.tap", qos: .userInitiated)) { list, _ in
-                recorder.append(list)
-            }
-            let applied = try capture.appliedMuteBehavior()
-            #expect(applied == behavior, "the tap reports the mute behavior it was given")
-            let rate = try CoreAudioObjects.nominalSampleRate(of: capture.aggregateID)
-            run.aggregateRate = rate
-            run.tapFormatRate = capture.tapFormat?.mSampleRate ?? 0
-            run.bufferLayout = try CoreAudioObjects.bufferChannelCounts(of: capture.aggregateID, scope: kAudioObjectPropertyScopeInput)
-            run.tapBuffers = Array(capture.tapBufferRange)
+            // The muted tap really silences the child: its loopback tone drops far below the unmuted level.
+            let muted = try #require(findings.runs.first { $0.behavior == "muted" })
+            let unmuted = try #require(findings.runs.first { $0.behavior == "unmuted" })
+            #expect(unmuted.loopbackWhileTapped > 0.05, "unmuted: the child is heard on its device")
+            #expect(muted.loopbackWhileTapped < unmuted.loopbackWhileTapped * 0.1, "muted: the child is silenced on its device")
 
-            try await Task.sleep(for: .seconds(2))
-            let snapshot = recorder.drain()
-            let tap = snapshot.mono(buffers: capture.tapBufferRange)
-            let loopback = snapshot.mono(buffers: capture.clockBufferRange)
-            run.tapRMS = SignalAnalysis.rms(tap)
-            run.tapPeakHz = SignalAnalysis.peakFrequency(tap, sampleRate: rate) ?? 0
-            run.loopbackWhileTapped = SignalAnalysis.magnitude(at: Self.toneHz, in: loopback, sampleRate: rate)
+            let defaultAfter = try CoreAudioObjects.defaultOutputDevice()
+            findings.defaultOutputAfter = try CoreAudioObjects.uid(of: defaultAfter)
+            #expect(defaultAfter == defaultBefore, "system default output unchanged")
 
-            #expect(run.tapRMS > 0, "captured audio has RMS above 0 (\(run.behavior))")
-            #expect(abs(run.tapPeakHz - Self.toneHz) <= 1, "FFT peak \(run.tapPeakHz) Hz within 1 Hz (\(run.behavior))")
-
-            if behavior == .muted {
-                // Recovery path: full teardown and rebuild, then capture again.
-                try capture.rebuild()
-                try await Task.sleep(for: .seconds(1))
-                let rebuilt = recorder.drain().mono(buffers: capture.tapBufferRange)
-                run.rmsAfterRebuild = SignalAnalysis.rms(rebuilt)
-                #expect(run.rmsAfterRebuild > 0, "capture works again after a rebuild")
-            }
-            capture.stop()
-            findings.runs.append(run)
+            try findings.write()
         }
-
-        // The muted tap really silences the child: its loopback tone drops far below the unmuted level.
-        let muted = try #require(findings.runs.first { $0.behavior == "muted" })
-        let unmuted = try #require(findings.runs.first { $0.behavior == "unmuted" })
-        #expect(unmuted.loopbackWhileTapped > 0.05, "unmuted: the child is heard on its device")
-        #expect(muted.loopbackWhileTapped < unmuted.loopbackWhileTapped * 0.1, "muted: the child is silenced on its device")
-
-        let defaultAfter = try CoreAudioObjects.defaultOutputDevice()
-        findings.defaultOutputAfter = try CoreAudioObjects.uid(of: defaultAfter)
-        #expect(defaultAfter == defaultBefore, "system default output unchanged")
-
-        try findings.write()
     }
 }
 

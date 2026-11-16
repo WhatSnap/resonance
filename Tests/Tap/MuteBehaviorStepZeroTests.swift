@@ -5,100 +5,102 @@ import Foundation
 import Testing
 @testable import ResonanceCore
 
-/// HQ-433 step 0: settle the tap mute behavior before the engine is wired.
-///
-/// 0a. A separate process holds a tap on the sine child, then is killed with SIGKILL. Does the child's audio come
-///     back on its device, and how fast?
-/// 0b. `mutedWhenTapped` (and `muted`, for comparison) measured in 100 ms windows from the moment IO starts, to tell
-///     a start transient from a steady leak.
-/// Also: whether a tap-only aggregate (no clock sub-device) delivers audio, which lets the engine keep capture and
-/// output on separate clocks.
-///
-/// Same silence rules as the HQ-429 spike: the child plays only to BlackHole 2ch, the taps list only the child, and
-/// the default output is read before and after. Off unless `RESONANCE_TAP_SPIKE=1`. Findings (JSON) go to
-/// `RESONANCE_STEP0_OUT` when set.
-@Suite(.enabled(if: ProcessInfo.processInfo.environment["RESONANCE_TAP_SPIKE"] == "1"), .serialized)
-struct MuteBehaviorStepZeroTests {
-    static let blackHoleUID = ProcessTapSpikeTests.blackHoleUID
-    static let toneHz = ProcessTapSpikeTests.toneHz
-    static let window = 0.1
+extension BlackHoleSuites {
+    /// HQ-433 step 0: settle the tap mute behavior before the engine is wired.
+    ///
+    /// 0a. A separate process holds a tap on the sine child, then is killed with SIGKILL. Does the child's audio come
+    ///     back on its device, and how fast?
+    /// 0b. `mutedWhenTapped` (and `muted`, for comparison) measured in 100 ms windows from the moment IO starts, to tell
+    ///     a start transient from a steady leak.
+    /// Also: whether a tap-only aggregate (no clock sub-device) delivers audio, which lets the engine keep capture and
+    /// output on separate clocks.
+    ///
+    /// Same silence rules as the HQ-429 spike: the child plays only to BlackHole 2ch, the taps list only the child, and
+    /// the default output is read before and after. Off unless `RESONANCE_TAP_SPIKE=1`. Findings (JSON) go to
+    /// `RESONANCE_STEP0_OUT` when set.
+    @Suite(.enabled(if: ProcessInfo.processInfo.environment["RESONANCE_TAP_SPIKE"] == "1"), .serialized)
+    struct MuteBehaviorStepZeroTests {
+        static let blackHoleUID = BlackHoleSuites.ProcessTapSpikeTests.blackHoleUID
+        static let toneHz = BlackHoleSuites.ProcessTapSpikeTests.toneHz
+        static let window = 0.1
 
-    @Test func killNineAndHundredMillisecondWindows() async throws {
-        guard #available(macOS 14.4, *) else { return }
-        let appRunning = try SpikeSupport.resonanceAppIsRunning()
-        try #require(!appRunning, "Quit the Resonance app first: it plays BlackHole on the speakers.")
-        let blackHoleLookup = try CoreAudioObjects.device(withUID: Self.blackHoleUID)
-        let blackHole = try #require(blackHoleLookup, "BlackHole 2ch is required as a silent sink")
-        let rate = try CoreAudioObjects.nominalSampleRate(of: blackHole)
-        let defaultBefore = try CoreAudioObjects.defaultOutputDevice()
+        @Test func killNineAndHundredMillisecondWindows() async throws {
+            guard #available(macOS 14.4, *) else { return }
+            let appRunning = try SpikeSupport.resonanceAppIsRunning()
+            try #require(!appRunning, "Quit the Resonance app first: it plays BlackHole on the speakers.")
+            let blackHoleLookup = try CoreAudioObjects.device(withUID: Self.blackHoleUID)
+            let blackHole = try #require(blackHoleLookup, "BlackHole 2ch is required as a silent sink")
+            let rate = try CoreAudioObjects.nominalSampleRate(of: blackHole)
+            let defaultBefore = try CoreAudioObjects.defaultOutputDevice()
 
-        var findings = StepZeroFindings()
-        findings.defaultOutputBefore = try CoreAudioObjects.uid(of: defaultBefore)
-        findings.rate = rate
+            var findings = StepZeroFindings()
+            findings.defaultOutputBefore = try CoreAudioObjects.uid(of: defaultBefore)
+            findings.rate = rate
 
-        let child = try SpikeSupport.launchSineChild(deviceUID: Self.blackHoleUID, frequency: Self.toneHz, seconds: 120)
-        defer { child.terminate(); child.waitUntilExit() }
-        let processLookup = try await SpikeSupport.waitForProcessObject(pid: child.processIdentifier)
-        let process = try #require(processLookup, "child never registered with Core Audio")
+            let child = try SpikeSupport.launchSineChild(deviceUID: Self.blackHoleUID, frequency: Self.toneHz, seconds: 120)
+            defer { child.terminate(); child.waitUntilExit() }
+            let processLookup = try await SpikeSupport.waitForProcessObject(pid: child.processIdentifier)
+            let process = try #require(processLookup, "child never registered with Core Audio")
 
-        let monitor = try LoopbackMonitor(device: blackHole)
-        defer { monitor.stop() }
-        try await Task.sleep(for: .milliseconds(500))
-        findings.referenceLevel = monitor.level(from: monitor.mark() - Int(0.4 * rate), seconds: 0.4,
-                                                frequency: Self.toneHz, rate: rate)
-
-        // 0a: another process taps the child, then dies by SIGKILL.
-        for behavior in ["muted", "mutedWhenTapped"] {
-            let tapper = try StepZeroSupport.launchTapper(pid: child.processIdentifier, behavior: behavior,
-                                                          clock: Self.blackHoleUID)
-            try await Task.sleep(for: .milliseconds(700))
-            let aliveStart = monitor.mark() - Int(0.4 * rate)
-            var run = KillRun(behavior: behavior)
-            run.levelWhileTapperAlive = monitor.level(from: aliveStart, seconds: 0.4, frequency: Self.toneHz, rate: rate)
-            let killMark = monitor.mark()
-            kill(tapper.processIdentifier, SIGKILL)
-            tapper.waitUntilExit()
-            try await Task.sleep(for: .milliseconds(2500))
-            run.windowsAfterKill = monitor.windows(from: killMark, count: 20, seconds: Self.window,
-                                                   frequency: Self.toneHz, rate: rate)
-            run.levelThreeSecondsLater = monitor.level(from: monitor.mark() - Int(0.4 * rate), seconds: 0.4,
-                                                       frequency: Self.toneHz, rate: rate)
-            findings.kills.append(run)
-            #expect(run.levelWhileTapperAlive < findings.referenceLevel * 0.1,
-                    "\(behavior): a tap held by another process mutes the child while it reads")
-        }
-
-        // 0b: in-process taps, 100 ms windows from IO start.
-        for behavior in [CATapMuteBehavior.mutedWhenTapped, .muted] {
-            let capture = ProcessTapCapture(configuration: .init(
-                processes: [process], muteBehavior: behavior, clockDeviceUID: Self.blackHoleUID, name: "Resonance Step0"))
-            let before = monitor.mark()
-            try await Task.sleep(for: .milliseconds(300))
-            let startMark = monitor.mark()
-            try capture.start(queue: DispatchQueue(label: "step0.tap", qos: .userInitiated)) { _, _ in }
-            try await Task.sleep(for: .milliseconds(2200))
-            var run = WindowRun(behavior: SpikeFindings.name(behavior))
-            run.levelBeforeStart = monitor.level(from: before, seconds: 0.3, frequency: Self.toneHz, rate: rate)
-            run.windowsAfterStart = monitor.windows(from: startMark, count: 20, seconds: Self.window,
-                                                    frequency: Self.toneHz, rate: rate)
-            capture.stop()
+            let monitor = try LoopbackMonitor(device: blackHole)
+            defer { monitor.stop() }
             try await Task.sleep(for: .milliseconds(500))
-            run.levelAfterStop = monitor.level(from: monitor.mark() - Int(0.3 * rate), seconds: 0.3,
-                                               frequency: Self.toneHz, rate: rate)
-            findings.windows.append(run)
+            findings.referenceLevel = monitor.level(from: monitor.mark() - Int(0.4 * rate), seconds: 0.4,
+                                                    frequency: Self.toneHz, rate: rate)
+
+            // 0a: another process taps the child, then dies by SIGKILL.
+            for behavior in ["muted", "mutedWhenTapped"] {
+                let tapper = try StepZeroSupport.launchTapper(pid: child.processIdentifier, behavior: behavior,
+                                                              clock: Self.blackHoleUID)
+                try await Task.sleep(for: .milliseconds(700))
+                let aliveStart = monitor.mark() - Int(0.4 * rate)
+                var run = KillRun(behavior: behavior)
+                run.levelWhileTapperAlive = monitor.level(from: aliveStart, seconds: 0.4, frequency: Self.toneHz, rate: rate)
+                let killMark = monitor.mark()
+                kill(tapper.processIdentifier, SIGKILL)
+                tapper.waitUntilExit()
+                try await Task.sleep(for: .milliseconds(2500))
+                run.windowsAfterKill = monitor.windows(from: killMark, count: 20, seconds: Self.window,
+                                                       frequency: Self.toneHz, rate: rate)
+                run.levelThreeSecondsLater = monitor.level(from: monitor.mark() - Int(0.4 * rate), seconds: 0.4,
+                                                           frequency: Self.toneHz, rate: rate)
+                findings.kills.append(run)
+                #expect(run.levelWhileTapperAlive < findings.referenceLevel * 0.1,
+                        "\(behavior): a tap held by another process mutes the child while it reads")
+            }
+
+            // 0b: in-process taps, 100 ms windows from IO start.
+            for behavior in [CATapMuteBehavior.mutedWhenTapped, .muted] {
+                let capture = ProcessTapCapture(configuration: .init(
+                    processes: [process], muteBehavior: behavior, clockDeviceUID: Self.blackHoleUID, name: "Resonance Step0"))
+                let before = monitor.mark()
+                try await Task.sleep(for: .milliseconds(300))
+                let startMark = monitor.mark()
+                try capture.start(queue: DispatchQueue(label: "step0.tap", qos: .userInitiated)) { _, _ in }
+                try await Task.sleep(for: .milliseconds(2200))
+                var run = WindowRun(behavior: SpikeFindings.name(behavior))
+                run.levelBeforeStart = monitor.level(from: before, seconds: 0.3, frequency: Self.toneHz, rate: rate)
+                run.windowsAfterStart = monitor.windows(from: startMark, count: 20, seconds: Self.window,
+                                                        frequency: Self.toneHz, rate: rate)
+                capture.stop()
+                try await Task.sleep(for: .milliseconds(500))
+                run.levelAfterStop = monitor.level(from: monitor.mark() - Int(0.3 * rate), seconds: 0.3,
+                                                   frequency: Self.toneHz, rate: rate)
+                findings.windows.append(run)
+            }
+
+            // Tap-only aggregate: no clock sub-device. Does IO run and carry the tone?
+            let tapOnly = try StepZeroSupport.launchTapper(pid: child.processIdentifier, behavior: "muted", clock: "none")
+            let report = try StepZeroSupport.readLine(from: tapOnly, prefix: "RMS", timeout: 6)
+            kill(tapOnly.processIdentifier, SIGKILL)
+            tapOnly.waitUntilExit()
+            findings.tapOnlyAggregateReport = report
+
+            let defaultAfter = try CoreAudioObjects.defaultOutputDevice()
+            findings.defaultOutputAfter = try CoreAudioObjects.uid(of: defaultAfter)
+            #expect(defaultAfter == defaultBefore, "system default output unchanged")
+            try findings.write()
         }
-
-        // Tap-only aggregate: no clock sub-device. Does IO run and carry the tone?
-        let tapOnly = try StepZeroSupport.launchTapper(pid: child.processIdentifier, behavior: "muted", clock: "none")
-        let report = try StepZeroSupport.readLine(from: tapOnly, prefix: "RMS", timeout: 6)
-        kill(tapOnly.processIdentifier, SIGKILL)
-        tapOnly.waitUntilExit()
-        findings.tapOnlyAggregateReport = report
-
-        let defaultAfter = try CoreAudioObjects.defaultOutputDevice()
-        findings.defaultOutputAfter = try CoreAudioObjects.uid(of: defaultAfter)
-        #expect(defaultAfter == defaultBefore, "system default output unchanged")
-        try findings.write()
     }
 }
 

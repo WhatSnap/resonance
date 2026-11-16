@@ -203,15 +203,17 @@ final class TapCaptureContext: @unchecked Sendable {
 
     /// Runs on the HAL IO thread. Accepts one interleaved buffer (stereo or mono) or two mono buffers.
     func process(_ list: UnsafePointer<AudioBufferList>) {
-        let buffers = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: list))
-        guard buffers.count > 0, let first = buffers[0].mData else { return }
-        let channels = max(Int(buffers[0].mNumberChannels), 1)
-        let samples = Int(buffers[0].mDataByteSize) / MemoryLayout<Float>.size
+        let count = Int(list.pointee.mNumberBuffers)
+        guard count > 0 else { return }
+        let buffer0 = audioBuffer(list, 0)
+        guard let first = buffer0.mData else { return }
+        let channels = max(Int(buffer0.mNumberChannels), 1)
+        let samples = Int(buffer0.mDataByteSize) / MemoryLayout<Float>.size
         let frames = samples / channels
         guard frames > 0 else { return }
         let a = first.assumingMemoryBound(to: Float.self)
-        let b: UnsafeMutablePointer<Float>? = channels == 1 && buffers.count > 1
-            ? buffers[1].mData?.assumingMemoryBound(to: Float.self) : nil
+        let b: UnsafeMutablePointer<Float>? = channels == 1 && count > 1
+            ? audioBuffer(list, 1).mData?.assumingMemoryBound(to: Float.self) : nil
 
         var peak: Float = 0
         vDSP_maxmgv(a, 1, &peak, vDSP_Length(samples))
@@ -253,6 +255,7 @@ private func tapCaptureIOProc(_ device: AudioObjectID, _ now: UnsafePointer<Audi
                               _ output: UnsafeMutablePointer<AudioBufferList>, _ outputTime: UnsafePointer<AudioTimeStamp>,
                               _ clientData: UnsafeMutableRawPointer?) -> OSStatus {
     guard let clientData else { return noErr }
-    Unmanaged<TapCaptureContext>.fromOpaque(clientData).takeUnretainedValue().process(input)
+    // Guaranteed ref: no retain/release on the IO thread (the capture holds the context).
+    Unmanaged<TapCaptureContext>.fromOpaque(clientData)._withUnsafeGuaranteedRef { $0.process(input) }
     return noErr
 }

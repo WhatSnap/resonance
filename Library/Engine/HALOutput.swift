@@ -174,9 +174,12 @@ final class HALOutputContext: @unchecked Sendable {
 
     /// Consumer side of the buffer. Runs on the render thread.
     func pull(_ list: UnsafeMutablePointer<AudioBufferList>, frames: Int) {
-        let buffers = UnsafeMutableAudioBufferListPointer(list)
-        guard buffers.count >= 2, let l = buffers[0].mData, let r = buffers[1].mData else {
-            for b in buffers { if let d = b.mData { memset(d, 0, Int(b.mDataByteSize)) } }
+        let count = Int(list.pointee.mNumberBuffers)
+        guard count >= 2, let l = audioBuffer(list, 0).mData, let r = audioBuffer(list, 1).mData else {
+            for i in 0..<count {
+                let b = audioBuffer(list, i)
+                if let d = b.mData { memset(d, 0, Int(b.mDataByteSize)) }
+            }
             return
         }
         let left = l.assumingMemoryBound(to: Float.self)
@@ -201,7 +204,8 @@ private func halOutputPullBuffer(_ refCon: UnsafeMutableRawPointer, _ flags: Uns
                                  _ timeStamp: UnsafePointer<AudioTimeStamp>, _ bus: UInt32, _ frames: UInt32,
                                  _ data: UnsafeMutablePointer<AudioBufferList>?) -> OSStatus {
     guard let data else { return noErr }
-    Unmanaged<HALOutputContext>.fromOpaque(refCon).takeUnretainedValue().pull(data, frames: Int(frames))
+    // Guaranteed ref: no retain/release on the render thread (the output holds the context).
+    Unmanaged<HALOutputContext>.fromOpaque(refCon)._withUnsafeGuaranteedRef { $0.pull(data, frames: Int(frames)) }
     return noErr
 }
 
@@ -209,7 +213,9 @@ private func halOutputPullBuffer(_ refCon: UnsafeMutableRawPointer, _ flags: Uns
 private func halOutputPullPitch(_ refCon: UnsafeMutableRawPointer, _ flags: UnsafeMutablePointer<AudioUnitRenderActionFlags>,
                                 _ timeStamp: UnsafePointer<AudioTimeStamp>, _ bus: UInt32, _ frames: UInt32,
                                 _ data: UnsafeMutablePointer<AudioBufferList>?) -> OSStatus {
-    let context = Unmanaged<HALOutputContext>.fromOpaque(refCon).takeUnretainedValue()
-    guard let data, let pitch = context.pitchUnit else { return noErr }
-    return AudioUnitRender(pitch, flags, timeStamp, 0, frames, data)
+    guard let data else { return noErr }
+    return Unmanaged<HALOutputContext>.fromOpaque(refCon)._withUnsafeGuaranteedRef { context in
+        guard let pitch = context.pitchUnit else { return noErr }
+        return AudioUnitRender(pitch, flags, timeStamp, 0, frames, data)
+    }
 }

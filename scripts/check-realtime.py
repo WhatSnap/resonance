@@ -19,7 +19,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 OBJ_DIR = ROOT / ".build" / "release" / "ResonanceCore.build"
-OBJECTS = ["DriftCompensatedBuffer.swift.o", "SPSCRingBuffer.swift.o"]
+OBJECTS = ["DriftCompensatedBuffer.swift.o", "SPSCRingBuffer.swift.o", "HALOutput.swift.o", "TapCapture.swift.o"]
 
 # Entry points the producer and consumer threads call (demangled, simplified, prefix match).
 ROOTS = [
@@ -36,6 +36,12 @@ ROOTS = [
     "SPSCRingBuffer.advance(by:)",
     "SPSCRingBuffer.read(left:right:frameCount:)",
     "SPSCRingBuffer.fillLevel.getter",
+    # HQ-433 engine callbacks: the capture IOProc and the output render callbacks.
+    "TapCaptureContext.process(",
+    "HALOutputContext.pull(",
+    "@objc halOutputPullBuffer(",
+    "@objc halOutputPullPitch(",
+    "@objc tapCaptureIOProc(",
 ]
 # Checked too when present (private helpers may be fully inlined and vanish).
 OPTIONAL_ROOTS = [
@@ -43,7 +49,8 @@ OPTIONAL_ROOTS = [
     "DriftCompensatedBuffer.estimateLevel(",
     "DriftCompensatedBuffer.prime(",
 ]
-ALLOWED_EXTERNAL = {"_memmove", "_memcpy", "_memset", "_bzero", "___bzero"}
+ALLOWED_EXTERNAL = {"_memmove", "_memcpy", "_memset", "_bzero", "___bzero",
+                    "_AudioUnitRender", "_vDSP_maxmgv", "_mach_absolute_time", "___stack_chk_fail"}
 FORBIDDEN = re.compile(
     r"swift_beginAccess|swift_endAccess|swift_retain|swift_release|swift_allocObject|swift_slowAlloc|"
     r"swift_slowDealloc|swift_once|_malloc|_calloc|_realloc|_free\b|os_unfair_lock|pthread_|NSLock|"

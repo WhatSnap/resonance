@@ -1,7 +1,12 @@
 import CoreAudio
 import Darwin
 import Foundation
+import Testing
 @testable import ResonanceCore
+
+/// Every suite that plays to or reads BlackHole is nested here, so they run one at a time: two at once would sum on
+/// the sink and spoil each other's levels. (`.serialized` applies to nested suites.)
+@Suite(.serialized) enum BlackHoleSuites {}
 
 /// BlackHole 2ch as a silent sink: what the engine plays there loops back to BlackHole's input and nowhere else.
 enum SilentSink {
