@@ -2,6 +2,40 @@
 
 Newest first. The lead's notebook (resonance-lead).
 
+## 2026-11-16 13:20Z — Engine landed; Luis's listen check open (HQ-433)
+
+- **True now:** HQ-433 (tap engine, PASS on 846887a) and the HQ-434 Library part (PASS on a12204b) have landed on
+  `hq-423-optimization` (7aa6b3a, local, not pushed). The app is built at
+  `~/.hq/work/resonance-build-433/app/Resonance.app` (2.0, ad-hoc signed). The signing research is
+  `./docs/research/2026-11-16/signing.md`. The session was idle overnight after 00:05Z: no morning note was written.
+- **Waiting on Luis:** L5S3, the listen check (`./docs/gates/2026-11-16-listen-check.md`); S8G4, the signing choice, money
+  (`./docs/gates/2026-11-16-signing.md`).
+- **In flight:** `resonance-build-448` (HQ-448, the watchdog rebuilds on pauses: HQ-433 review finding 1) and
+  `resonance-build-434-2` (HQ-434 wiring: settings + Open at login in the menu; review findings 1–4).
+- **Queued:** HQ-435 cleanup (after the wiring lands, to avoid Sources/ conflicts). HQ-446 build after S8G4.
+- **Push:** none. When the whole plan is green, ask Luis for one push of `hq-423-optimization` and a PR.
+
+## 2026-11-16 ~23:52Z — Night run (hq brief: ~/.hq/work/hq/night-2026-11-16.md)
+
+- **True now:** HQ-429, 430, 431 and 432 have landed on `hq-423-optimization` (2f64a67, local, not pushed: the repo is
+  shared, so push is red). HQ-446 is filed (signing, step 8).
+- **In flight (3 workers, the cap):** `resonance-build-433` (engine, critical path; step 0 mute check first, and it
+  builds a runnable .app), `resonance-build-434` (settings + login item, Library only, no Sources/ edits),
+  `resonance-research-446` (signing options doc).
+- **Queued:** the HQ-433 review → land → the listen-check card for Luis in the morning. HQ-434 wiring in Sources/ after
+  433. HQ-435 cleanup after 433. HQ-446: the ask page (money) once the research doc lands.
+- **Morning note:** `~/.hq/work/resonance-lead/for-luis-1100.md` by 08:30Z.
+
+## 2026-11-16 — HQ-429, 430, 431 landed; 432 in review (HQ-423)
+
+- **True now:** on local branch `hq-423-optimization` (not pushed): HQ-430 offline pitch tests, HQ-431 device router,
+  HQ-429 tap spike (capture ran once on Luis's Mac with his OK, C7T2: Warp now holds the System Audio Recording
+  permission). P4N1 (plan) and C7T2 are recorded. Each landed after a PASS review on its commit.
+- **In flight:** `resonance-review-432` reviews HQ-432 (4be925c). It adds swift-atomics, and write/render take hostTime.
+- **Next:** land 432 on PASS → open the HQ-433 worker. Its first step is the mute-behavior check (kill -9 and 100 ms
+  windows), with `muted` as the default. Inputs are in the HQ-433 comments.
+- **Test command:** `./scripts/test.sh` (Command Line Tools only, no Xcode).
+
 ## 2026-11-16 — Plan approved, build started (HQ-423)
 
 - **True now:** Luis approved the plan in this window ("go si rearmalo de la mejor manera"). The record of P4N1 was refused
