@@ -64,6 +64,18 @@ struct InstallFootprintTests {
         }
     }
 
+    @Test("README and the DMG's README point a first-time user through Gatekeeper and the audio prompt")
+    func firstOpenSteps() throws {
+        let readme = try Self.text("README.md")
+        #expect(readme.contains("https://github.com/WhatSnap/resonance/releases/latest"))
+        for body in [readme, try Self.text("build-dmg.sh")] {
+            #expect(body.contains("Privacy & Security"))
+            #expect(body.contains("Open Anyway"))
+            #expect(body.contains("audio recording"))
+            #expect(!body.contains("right-click"), "right-click > Open no longer bypasses Gatekeeper on macOS 15")
+        }
+    }
+
     @Test("Dead DSP code and the 1.0 constants are gone")
     func deadCodeIsGone() {
         for path in ["Core", "Sources/Audio/FFTProcessor.swift", "Sources/Audio/PitchShifter.swift",
