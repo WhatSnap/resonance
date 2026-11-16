@@ -28,7 +28,12 @@ When you tune to 432Hz, you do not simply create music—you create a sanctuary 
 
 Requires macOS 14.4 or later.
 
-1. Open Resonance, allow audio recording when macOS asks (once), and turn it on from the menu bar.
+1. Download `Resonance-2.0.dmg` from the [latest release](https://github.com/WhatSnap/resonance/releases/latest).
+2. Open the DMG and drag Resonance.app to Applications.
+3. Open Resonance. The app is not notarized yet, so the first time macOS blocks it: go to
+   **System Settings → Privacy & Security**, scroll down, click **Open Anyway** next to Resonance, and confirm.
+4. Allow audio recording when macOS asks (once).
+5. Turn it on from the menu bar icon.
 
 ---
 

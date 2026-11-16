@@ -27,10 +27,11 @@ cat > "${STAGING}/README.txt" << 'README'
 Resonance 2.0 (macOS 14.4 or later)
 
 1. Drag Resonance.app to Applications and open it.
-2. Allow audio recording when macOS asks (once).
-3. Turn it on from the menu bar icon.
-
-If macOS says the app is damaged or can't be opened: right-click it, choose Open, then Open again.
+2. The first time, macOS blocks it because it is not notarized: open
+   System Settings > Privacy & Security, scroll down, click Open Anyway
+   next to Resonance, and confirm.
+3. Allow audio recording when macOS asks (once).
+4. Turn it on from the menu bar icon.
 README
 
 rm -f "${DMG_PATH}"
