@@ -47,6 +47,17 @@ open class ResonanceAppDelegate: NSObject, NSApplicationDelegate {
         super.init()
     }
 
+    /// The initializer SwiftUI's `@NSApplicationDelegateAdaptor` calls, through Objective-C `alloc`/`init` (HQ-451).
+    /// It is a designated initializer so a subclass's `init()` must say `override`, which makes it reachable from
+    /// Objective-C; without it the subclass's `init()` is hidden and launch traps in this class's unimplemented `init()`.
+    /// Shows nothing: a subclass passes its window through `init(policy:launchedAsLoginItem:showWindow:)`.
+    public override init() {
+        self.policy = LaunchWindowPolicy()
+        self.launchedAsLoginItem = LaunchWindowPolicy.currentLaunchIsLoginItem
+        self.showWindow = {}
+        super.init()
+    }
+
     public func applicationDidFinishLaunching(_ notification: Notification) {
         if policy.shouldShowAtLaunch(launchedAsLoginItem: launchedAsLoginItem()) {
             showWindow()

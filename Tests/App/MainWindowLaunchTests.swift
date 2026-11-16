@@ -95,3 +95,31 @@ struct MainWindowLaunchTests {
         #expect(delegate.applicationShouldTerminateAfterLastWindowClosed(NSApplication.shared) == false)
     }
 }
+
+/// HQ-451: SwiftUI's `@NSApplicationDelegateAdaptor` builds the delegate through Objective-C `alloc`/`init`, not
+/// through a Swift initializer. A subclass in another module (the app's `AppDelegate`) must still get its own `init()`
+/// that way, or the launch traps in the base class's unimplemented `init()`.
+@MainActor
+final class SubclassedAppDelegate: ResonanceAppDelegate {
+    static var shows = 0
+
+    override init() {
+        super.init(policy: LaunchWindowPolicy(defaults: MainWindowLaunchTests.isolatedDefaults()),
+                   launchedAsLoginItem: { false },
+                   showWindow: { SubclassedAppDelegate.shows += 1 })
+    }
+}
+
+@MainActor
+@Suite("App delegate built the way SwiftUI builds it")
+struct AppDelegateAdaptorTests {
+    @Test("Objective-C init on a subclass runs the subclass's init, not a trap")
+    func objcInitReachesSubclass() {
+        let type: NSObject.Type = SubclassedAppDelegate.self
+        let delegate = type.init() as? SubclassedAppDelegate
+        #expect(delegate != nil)
+        SubclassedAppDelegate.shows = 0
+        delegate?.applicationDidFinishLaunching(MainWindowLaunchTests.launched)
+        #expect(SubclassedAppDelegate.shows == 1)
+    }
+}
