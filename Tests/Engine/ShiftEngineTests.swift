@@ -16,6 +16,9 @@ final class FakeCapture: CaptureSource {
     var liveRate: Double?
     var failPrepare: Error?
     var health = CaptureHealth(signalSeen: false, silentSeconds: 0)
+    /// Whether another process is running audio output (overrides `health.othersPlaying`).
+    var othersPlaying = true
+    var failRebuild: Error?
     private(set) var isRunning = false
     private(set) var prepareCount = 0
     private(set) var startCount = 0
@@ -47,12 +50,17 @@ final class FakeCapture: CaptureSource {
     func rebuild() throws -> Double {
         log.calls.append("capture.rebuild")
         rebuildCount += 1
+        if let failRebuild { throw failRebuild }
         health = CaptureHealth(signalSeen: false, silentSeconds: 0)
         return rate
     }
 
     func currentSampleRate() -> Double? { liveRate ?? (isRunning ? rate : nil) }
-    func currentHealth() -> CaptureHealth { health }
+    func currentHealth() -> CaptureHealth {
+        var current = health
+        current.othersPlaying = othersPlaying
+        return current
+    }
 }
 
 @MainActor
@@ -232,19 +240,107 @@ struct ShiftEngineTests {
         #expect(h.engine.state == .running(speakers.id))
     }
 
-    @Test("all-zero buffers after a signal rebuild the tap once, then wait for a signal again")
-    func silenceWatchdog() throws {
+    @Test("a 10-second pause with no process playing causes no rebuild")
+    func pauseWithNothingPlaying() throws {
         let h = EngineHarness()
         try h.engine.start()
-        h.capture.health = CaptureHealth(signalSeen: true, silentSeconds: 1)
+        h.capture.health = CaptureHealth(signalSeen: true, silentSeconds: 0)
         h.clock.advance(by: 1)
+        h.capture.othersPlaying = false
+        for second in 1...10 {
+            h.capture.health = CaptureHealth(signalSeen: true, silentSeconds: Double(second))
+            h.clock.advance(by: 1)
+        }
         #expect(h.capture.rebuildCount == 0)
-        h.capture.health = CaptureHealth(signalSeen: true, silentSeconds: ShiftEngine.silentSecondsBeforeRebuild)
+        #expect(h.engine.state == .running(speakers.id))
+    }
+
+    @Test("zeros while a process is playing rebuild the tap within the watchdog window")
+    func zerosWhilePlayingRebuild() throws {
+        let h = EngineHarness()
+        try h.engine.start()
+        h.capture.health = CaptureHealth(signalSeen: true, silentSeconds: 0)
         h.clock.advance(by: 1)
+        // Music was paused for a while: no rebuild.
+        h.capture.othersPlaying = false
+        h.capture.health = CaptureHealth(signalSeen: true, silentSeconds: 20)
+        h.clock.advance(by: 20)
+        #expect(h.capture.rebuildCount == 0)
+        // Playback resumes but the tap stays at zeros: rebuild once the zeros-while-playing run reaches the threshold.
+        h.capture.othersPlaying = true
+        h.clock.advance(by: ShiftEngine.silentSecondsBeforeRebuild - ShiftEngine.watchdogInterval)
+        #expect(h.capture.rebuildCount == 0)
+        h.clock.advance(by: ShiftEngine.watchdogInterval * 2)
         #expect(h.capture.rebuildCount == 1)
-        // The rebuilt tap has seen no signal yet (music paused): no rebuild loop.
+        #expect(h.engine.state == .running(speakers.id))
+    }
+
+    @Test("a rebuilt tap that brings the signal back resets the retry count")
+    func signalResetsRetries() throws {
+        let h = EngineHarness()
+        try h.engine.start()
+        h.capture.health = CaptureHealth(signalSeen: true, silentSeconds: 0)
+        h.clock.advance(by: 1)
+        h.capture.health = CaptureHealth(signalSeen: true, silentSeconds: 10)
+        h.clock.advance(by: ShiftEngine.silentSecondsBeforeRebuild + 1)
+        #expect(h.capture.rebuildCount == 1)
+        // The new tap delivers audio, then goes stale again: the first threshold applies again, not the backoff.
+        h.capture.health = CaptureHealth(signalSeen: true, silentSeconds: 0)
+        h.clock.advance(by: 1)
+        h.capture.health = CaptureHealth(signalSeen: true, silentSeconds: 10)
+        h.clock.advance(by: ShiftEngine.silentSecondsBeforeRebuild + 1)
+        #expect(h.capture.rebuildCount == 2)
+    }
+
+    @Test("rebuilds back off, and after the cap the watchdog stops retrying and shows the error")
+    func rebuildCap() throws {
+        let h = EngineHarness()
+        try h.engine.start()
+        h.capture.health = CaptureHealth(signalSeen: true, silentSeconds: 0)
+        h.clock.advance(by: 1)
+        h.capture.health = CaptureHealth(signalSeen: true, silentSeconds: 1)
+        // Each rebuilt tap stays at zeros while a process plays.
+        var expected = 0
+        var wait = ShiftEngine.silentSecondsBeforeRebuild
+        for _ in 0..<ShiftEngine.maxConsecutiveRebuilds {
+            h.clock.advance(by: wait - ShiftEngine.watchdogInterval)
+            #expect(h.capture.rebuildCount == expected, "not before the backoff of \(wait) s")
+            h.clock.advance(by: ShiftEngine.watchdogInterval * 2)
+            expected += 1
+            #expect(h.capture.rebuildCount == expected)
+            h.capture.health = CaptureHealth(signalSeen: false, silentSeconds: 1)
+            wait *= 2
+        }
+        #expect(h.engine.notice == nil)
+        h.clock.advance(by: 600)
+        #expect(h.capture.rebuildCount == ShiftEngine.maxConsecutiveRebuilds)
+        #expect(h.engine.notice == ShiftEngine.rebuildGaveUpNotice)
+        // A signal later clears the error.
+        h.capture.health = CaptureHealth(signalSeen: true, silentSeconds: 0)
+        h.clock.advance(by: 1)
+        #expect(h.engine.notice == nil)
+    }
+
+    @Test("a tap that never delivered a signal is not rebuilt (no permission is not a stale tap)")
+    func noRebuildBeforeFirstSignal() throws {
+        let h = EngineHarness()
+        try h.engine.start()
+        h.capture.health = CaptureHealth(signalSeen: false, silentSeconds: 30)
         h.clock.advance(by: 30)
-        #expect(h.capture.rebuildCount == 1)
+        #expect(h.capture.rebuildCount == 0)
+    }
+
+    @Test("a failed rebuild stops both sides and reports the error")
+    func failedRebuild() throws {
+        let h = EngineHarness()
+        try h.engine.start()
+        h.capture.health = CaptureHealth(signalSeen: true, silentSeconds: 0)
+        h.clock.advance(by: 1)
+        h.capture.failRebuild = FakeError(description: "tap gone")
+        h.capture.health = CaptureHealth(signalSeen: true, silentSeconds: 10)
+        h.clock.advance(by: ShiftEngine.silentSecondsBeforeRebuild + 1)
+        #expect(h.engine.state == .failed("tap gone"))
+        #expect(!h.output.isRunning)
     }
 
     @Test("no signal at all since start shows a notice; a signal clears it")

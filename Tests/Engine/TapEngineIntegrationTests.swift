@@ -52,7 +52,7 @@ extension BlackHoleSuites {
             print("TAP-ENGINE", "peak", hz ?? 0, "at432", at432, "at440", at440, "health", health)
 
             let peak = try #require(hz, "something reached BlackHole")
-            #expect(abs(peak - PitchMode.hz432.targetFrequency) <= 1, "peak \(peak) Hz")
+            #expect(abs(peak - PitchMode.hz432.targetFrequency) <= 0.5, "peak \(peak) Hz")
             #expect(at440 < at432 * 0.1, "the original 440 Hz is muted by the tap")
             #expect(health.signalSeen)
 
@@ -72,5 +72,15 @@ struct TapCaptureGuardTests {
         #expect(capture.isGlobal)
         #expect(throws: TapCaptureError.globalTapRefusedInTests) { _ = try capture.prepare() }
         #expect(capture.currentSampleRate() == nil)
+    }
+
+    @Test("the playing check reads the HAL process list without creating a tap")
+    func playingCheckIsReadOnly() throws {
+        guard #available(macOS 14.4, *) else { return }
+        #expect(TapCapture.processObjectList() != nil)
+        // An object that is not a process (or not running output) counts as not playing.
+        let capture = TapCapture(target: .processes([AudioObjectID(0x7FFF_FFF0)]))
+        #expect(capture.capturedProcessesPlaying() == false)
+        #expect(capture.currentSampleRate() == nil, "no tap was created")
     }
 }

@@ -11,12 +11,18 @@ import Foundation
 /// - Headset profile (≤ 24 kHz): both sides stop; audio plays untouched until the rate goes back up.
 /// - Output lost: both sides stop until the router names a usable output.
 /// - Wake: both sides restart from scratch (a fresh tap), since sleep is when taps go stale.
-/// - Silence watchdog: when a tap that has delivered audio turns to exact zeros for `silentSecondsBeforeRebuild`, the
-///   tap is rebuilt once. The new tap waits for its own first signal, so paused music does not cause a rebuild loop.
+/// - Silence watchdog: zeros count only while a captured process is running audio output, so a pause (nothing
+///   playing) never rebuilds the tap. Once the engine has seen a signal, `silentSecondsBeforeRebuild` of zeros while
+///   something plays rebuilds the tap. A rebuilt tap that stays at zeros is rebuilt again after a doubled wait, at most
+///   `maxConsecutiveRebuilds` times in a row; then the watchdog stops and shows `rebuildGaveUpNotice`. A signal resets
+///   the count. A tap that never delivered a signal is not rebuilt (that is the missing-permission case).
 @MainActor
 public final class ShiftEngine {
     public static let watchdogInterval = 0.5
     public static let silentSecondsBeforeRebuild = 3.0
+    /// Rebuilds in a row that did not bring a signal back, before the watchdog gives up.
+    public static let maxConsecutiveRebuilds = 3
+    public static let rebuildGaveUpNotice = "The capture stays silent while audio is playing. Turn Resonance off and on again."
     /// With no signal at all this long after start, the menu says how to check the capture permission.
     public static let noSignalNoticeAfter = 6.0
     public static let noSignalNotice = "Nothing captured yet. If music is playing and you hear nothing, allow Resonance in System Settings › Privacy & Security › Screen & System Audio Recording."
@@ -41,6 +47,10 @@ public final class ShiftEngine {
     private var watchdog: ScheduledTask?
     private var secondsWithoutAnySignal = 0.0
     private var everSawSignal = false
+    /// Seconds of zeros while a captured process is playing, in the current run.
+    private var zerosWhilePlaying = 0.0
+    /// Rebuilds since the last signal.
+    private var rebuildsWithoutSignal = 0
     private var capturePrepared = false
     /// The tap's rate last time, used as the output's first client rate so a restart usually starts it once.
     private var lastTapRate: Double?
@@ -64,6 +74,8 @@ public final class ShiftEngine {
         guard state == .off || isFailed else { return }
         everSawSignal = false
         secondsWithoutAnySignal = 0
+        zerosWhilePlaying = 0
+        rebuildsWithoutSignal = 0
         notice = nil
         guard let target = router.start() else {
             state = .waitingForOutput
@@ -185,23 +197,50 @@ public final class ShiftEngine {
     private func pollWatchdog() {
         guard case .running = state, capture.isRunning else { return }
         let health = capture.currentHealth()
+        let zeros = health.silentSeconds >= Self.watchdogInterval
         if health.signalSeen {
             everSawSignal = true
-            notice = nil
-            if health.silentSeconds >= Self.silentSecondsBeforeRebuild {
-                perform {
-                    let rate = try capture.rebuild()
-                    if let buffer, rate != buffer.config.sampleRate, let target = router.current {
-                        stopIO()
-                        try startIO(target)
-                    }
-                }
-            }
+            if notice == Self.noSignalNotice { notice = nil }
         } else if !everSawSignal {
             secondsWithoutAnySignal += Self.watchdogInterval
             if secondsWithoutAnySignal >= Self.noSignalNoticeAfter { notice = Self.noSignalNotice }
         }
+
+        if health.signalSeen && !zeros {
+            zerosWhilePlaying = 0
+            rebuildsWithoutSignal = 0
+            if notice == Self.rebuildGaveUpNotice { notice = nil }
+        } else if everSawSignal && zeros && health.othersPlaying {
+            zerosWhilePlaying += Self.watchdogInterval
+        } else {
+            zerosWhilePlaying = 0
+        }
+
+        if zerosWhilePlaying >= rebuildThreshold {
+            if rebuildsWithoutSignal >= Self.maxConsecutiveRebuilds {
+                notice = Self.rebuildGaveUpNotice
+            } else {
+                rebuildTap()
+            }
+        }
         if case .running = state { scheduleWatchdog() }
+    }
+
+    /// Zeros-while-playing needed before the next rebuild: doubles with each rebuild that brought no signal.
+    private var rebuildThreshold: Double {
+        Self.silentSecondsBeforeRebuild * Double(1 << min(rebuildsWithoutSignal, Self.maxConsecutiveRebuilds))
+    }
+
+    private func rebuildTap() {
+        zerosWhilePlaying = 0
+        rebuildsWithoutSignal += 1
+        perform {
+            let rate = try capture.rebuild()
+            if let buffer, rate != buffer.config.sampleRate, let target = router.current {
+                stopIO()
+                try startIO(target)
+            }
+        }
     }
 
     private var isFailed: Bool {

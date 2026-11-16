@@ -142,8 +142,40 @@ public final class TapCapture: CaptureSource {
 
     public func currentHealth() -> CaptureHealth {
         guard let context, rate > 0 else { return CaptureHealth(signalSeen: false, silentSeconds: 0) }
-        return CaptureHealth(signalSeen: context.signalSeen.load(ordering: .relaxed),
-                             silentSeconds: Double(context.zeroFrames.load(ordering: .relaxed)) / rate)
+        let silentSeconds = Double(context.zeroFrames.load(ordering: .relaxed)) / rate
+        // The process list is read only during a run of zeros, the one time the watchdog needs it.
+        return CaptureHealth(signalSeen: context.signalSeen.load(ordering: .relaxed), silentSeconds: silentSeconds,
+                             othersPlaying: silentSeconds > 0 ? capturedProcessesPlaying() : true)
+    }
+
+    /// Whether any process this tap captures is running audio output (`kAudioProcessPropertyIsRunningOutput`).
+    /// `true` when the HAL cannot be read, so the engine falls back to its capped rebuilds.
+    func capturedProcessesPlaying() -> Bool {
+        let candidates: [AudioObjectID]
+        switch target {
+        case .processes(let list):
+            candidates = list
+        case .systemExcludingSelf:
+            guard let all = Self.processObjectList() else { return true }
+            let own = try? CoreAudioObjects.processObject(pid: getpid())
+            candidates = all.filter { $0 != own }
+        }
+        return candidates.contains { process in
+            let running = try? CoreAudioObjects.read(process, kAudioProcessPropertyIsRunningOutput, initial: UInt32(0))
+            return running.map { $0 != 0 } ?? false
+        }
+    }
+
+    /// Every Core Audio process object (`kAudioHardwarePropertyProcessObjectList`), or nil when it cannot be read.
+    static func processObjectList() -> [AudioObjectID]? {
+        var address = CoreAudioObjects.address(kAudioHardwarePropertyProcessObjectList)
+        let system = AudioObjectID(kAudioObjectSystemObject)
+        var size: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(system, &address, 0, nil, &size) == noErr else { return nil }
+        var list = [AudioObjectID](repeating: AudioObjectID(kAudioObjectUnknown),
+                                   count: Int(size) / MemoryLayout<AudioObjectID>.size)
+        guard AudioObjectGetPropertyData(system, &address, 0, nil, &size, &list) == noErr else { return nil }
+        return Array(list.prefix(Int(size) / MemoryLayout<AudioObjectID>.size))
     }
 
     // MARK: Teardown
