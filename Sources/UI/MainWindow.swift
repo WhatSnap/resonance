@@ -57,7 +57,7 @@ final class MainWindowController {
 /// The app's delegate: the tested launch and reopen rules, showing the window above.
 @MainActor
 final class AppDelegate: ResonanceAppDelegate {
-    init() {
+    override init() {
         super.init(showWindow: { MainWindowController.shared.show() })
     }
 }
