@@ -104,11 +104,11 @@ public final class ProcessTapCapture: @unchecked Sendable {
         self.handler = onInput
         self.queue = queue
         var newProc: AudioDeviceIOProcID?
-        try check(AudioDeviceCreateIOProcIDWithBlock(&newProc, aggregateID, queue) { _, input, inputTime, _, _ in
-            onInput(input, inputTime)
-        }, "AudioDeviceCreateIOProcIDWithBlock")
-        procID = newProc
         do {
+            try check(AudioDeviceCreateIOProcIDWithBlock(&newProc, aggregateID, queue) { _, input, inputTime, _, _ in
+                onInput(input, inputTime)
+            }, "AudioDeviceCreateIOProcIDWithBlock")
+            procID = newProc
             try check(AudioDeviceStart(aggregateID, procID), "AudioDeviceStart")
         } catch {
             teardown()
