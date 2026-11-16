@@ -15,38 +15,9 @@ mkdir -p "${APP_DIR}/Contents/MacOS" "${APP_DIR}/Contents/Resources"
 cp ".build/release/Resonance" "${APP_DIR}/Contents/MacOS/Resonance"
 chmod +x "${APP_DIR}/Contents/MacOS/Resonance"
 
-cat > "${APP_DIR}/Contents/Info.plist" <<'PLIST'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>CFBundleName</key>
-    <string>Resonance</string>
-    <key>CFBundleDisplayName</key>
-    <string>Resonance</string>
-    <key>CFBundleIdentifier</key>
-    <string>com.resonance.app</string>
-    <key>CFBundleVersion</key>
-    <string>2.0.0</string>
-    <key>CFBundleShortVersionString</key>
-    <string>2.0</string>
-    <key>CFBundleExecutable</key>
-    <string>Resonance</string>
-    <key>CFBundlePackageType</key>
-    <string>APPL</string>
-    <key>LSMinimumSystemVersion</key>
-    <string>14.4</string>
-    <key>LSUIElement</key>
-    <true/>
-    <key>NSHighResolutionCapable</key>
-    <true/>
-    <key>NSAudioCaptureUsageDescription</key>
-    <string>Resonance retunes the audio your Mac plays, so it needs to capture that audio.</string>
-    <key>NSPrincipalClass</key>
-    <string>NSApplication</string>
-</dict>
-</plist>
-PLIST
+# The one Info.plist (HQ-435): Resources/Info.plist.
+cp "Resources/Info.plist" "${APP_DIR}/Contents/Info.plist"
+plutil -lint "${APP_DIR}/Contents/Info.plist" >&2
 
 # A bundle with no sealed resource can show as "damaged"; one resource plus an ad-hoc signature of the whole
 # bundle avoids that.

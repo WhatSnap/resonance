@@ -6,7 +6,7 @@ import PackageDescription
 let package = Package(
     name: "Resonance",
     platforms: [
-        .macOS(.v14)
+        .macOS("14.4")
     ],
     products: [
         .executable(name: "Resonance", targets: ["Resonance"])

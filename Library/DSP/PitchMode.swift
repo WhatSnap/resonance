@@ -1,6 +1,6 @@
 import Foundation
 
-/// A tuning the app can apply. Moved from `AudioEngine` (HQ-430) so the DSP baseline tests can read it.
+/// A tuning the app can apply. Moved out of the 1.0 engine (HQ-430) so the DSP baseline tests can read it.
 public enum PitchMode: String, CaseIterable, Identifiable, Sendable {
     case off
     case hz174
@@ -39,23 +39,29 @@ public enum PitchMode: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    /// Cents to apply relative to 440Hz tuning.
-    public var pitchCents: Float {
+    /// The frequency a 440 Hz tone should land on, by name. `nil` for the demo, which is a plain semitone.
+    public var nominalTarget: Double? {
         switch self {
-        case .off: return 0
-        case .hz174: return -1607.82
-        case .hz285: return -752.09
-        case .hz396: return -182.40
-        case .hz417: return -93.13
-        case .hz432: return -31.77
-        case .hz444: return 15.67
-        case .hz528: return 315.64
-        case .hz639: return 647.21
-        case .hz741: return 902.49
-        case .hz852: return 1144.87
-        case .hz963: return 1356.38
-        case .demo: return -100
+        case .off: return 440
+        case .hz174: return 174
+        case .hz285: return 285
+        case .hz396: return 396
+        case .hz417: return 417
+        case .hz432: return 432
+        case .hz444: return 444
+        case .hz528: return 528
+        case .hz639: return 639
+        case .hz741: return 741
+        case .hz852: return 852
+        case .hz963: return 963
+        case .demo: return nil
         }
+    }
+
+    /// Cents to apply relative to 440Hz tuning: exactly `1200 · log2(target / 440)` (HQ-435).
+    public var pitchCents: Float {
+        guard let target = nominalTarget else { return -100 }
+        return Float(1200 * log2(target / Self.referenceFrequency))
     }
 
     /// Where a 440 Hz tone lands after the shift: `440 · 2^(cents/1200)`.
