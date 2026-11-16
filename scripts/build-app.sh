@@ -19,6 +19,9 @@ chmod +x "${APP_DIR}/Contents/MacOS/Resonance"
 cp "Resources/Info.plist" "${APP_DIR}/Contents/Info.plist"
 plutil -lint "${APP_DIR}/Contents/Info.plist" >&2
 
+# The app icon (HQ-463), rendered by scripts/render-icon.py; Info.plist names it (CFBundleIconFile).
+cp "Resources/AppIcon.icns" "${APP_DIR}/Contents/Resources/AppIcon.icns"
+
 # A bundle with no sealed resource can show as "damaged"; one resource plus an ad-hoc signature of the whole
 # bundle avoids that.
 echo "Resonance Resources" > "${APP_DIR}/Contents/Resources/Resonance.txt"

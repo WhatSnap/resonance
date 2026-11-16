@@ -18,6 +18,11 @@ APP_PATH="$(scripts/build-app.sh "${WORK_DIR}" | tail -n 1)"
 cp -R "${APP_PATH}" "${STAGING}/"
 ln -s /Applications "${STAGING}/Applications"
 
+# The volume shows the app icon (HQ-463): .VolumeIcon.icns at the root, hidden; the root's custom-icon flag is set
+# on a read-write image below, because hdiutil does not carry it over from the source folder.
+cp "Resources/AppIcon.icns" "${STAGING}/.VolumeIcon.icns"
+SetFile -a V "${STAGING}/.VolumeIcon.icns" 2>/dev/null || chflags hidden "${STAGING}/.VolumeIcon.icns"
+
 cat > "${STAGING}/README.txt" << 'README'
 Resonance 2.0 (macOS 14.4 or later)
 
@@ -29,7 +34,15 @@ If macOS says the app is damaged or can't be opened: right-click it, choose Open
 README
 
 rm -f "${DMG_PATH}"
-hdiutil create -volname "Resonance" -srcfolder "${STAGING}" -ov -format UDZO "${DMG_PATH}" >&2
+RW_DMG="${WORK_DIR}/rw.dmg"
+MOUNT="${WORK_DIR}/mnt"
+hdiutil create -volname "Resonance" -srcfolder "${STAGING}" -ov -format UDRW "${RW_DMG}" >&2
+mkdir -p "${MOUNT}"
+# -nobrowse: mounted out of sight, no Finder window, no desktop icon.
+hdiutil attach -nobrowse -noautoopen -mountpoint "${MOUNT}" "${RW_DMG}" >&2
+SetFile -a C "${MOUNT}" 2>/dev/null || true
+hdiutil detach "${MOUNT}" >&2
+hdiutil convert "${RW_DMG}" -format UDZO -o "${DMG_PATH}" >&2
 rm -rf "${WORK_DIR}"
 
 echo "${DMG_PATH}"
