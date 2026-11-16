@@ -2,7 +2,7 @@ import AVFoundation
 import Foundation
 
 /// Renders a sine through Apple's NewTimePitch unit (`AVAudioUnitTimePitch`, the same
-/// component `CoreAudioPitchGraph` uses) with AVAudioEngine in offline manual rendering mode.
+/// component the HAL output uses) with AVAudioEngine in offline manual rendering mode.
 /// Manual rendering detaches the engine from every audio device: nothing is opened or played.
 final class OfflinePitchRenderer {
     enum RenderError: Error {
