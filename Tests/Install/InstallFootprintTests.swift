@@ -49,6 +49,11 @@ struct InstallFootprintTests {
         #expect(!dmg.contains("<plist") && !dmg.contains("swift build"))
     }
 
+    @Test("build-app.sh writes no stray Resonance.txt into the bundle (HQ-472)")
+    func noStrayResourceFile() throws {
+        #expect(!(try Self.text("scripts/build-app.sh")).contains("Resonance.txt"))
+    }
+
     @Test("No BlackHole or Multi-Output in the app, the DMG script or the README")
     func noBlackHole() throws {
         let sources = Self.root.appendingPathComponent("Sources")
