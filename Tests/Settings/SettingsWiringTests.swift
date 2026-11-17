@@ -55,8 +55,8 @@ struct SettingsWiringTests {
         #expect(store.isEnabled == false)
     }
 
-    @Test("a headset pause does not save off")
-    func headsetPauseDoesNotSaveOff() {
+    @Test("headset call mode keeps the shift on and saved on")
+    func headsetCallModeStaysOn() {
         let store = Self.isolatedStore()
         let h = EngineHarness()
         let model = EngineViewModel(engine: h.engine, settings: store)
@@ -64,7 +64,7 @@ struct SettingsWiringTests {
         model.setEnabled(true)
         h.provider.setRate(speakers.id, 16_000)
         h.settle()
-        #expect(model.statusText == "Paused while the headset is in call mode")
+        #expect(model.statusText == "On")
         #expect(store.isEnabled)
     }
 

@@ -177,31 +177,82 @@ struct ShiftEngineTests {
         #expect(h.capture.buffer?.config.sampleRate == 44_100)
     }
 
-    @Test("headset profile pauses the shift and the next normal rate resumes it, output first")
-    func headsetPauseAndResume() throws {
+    // MARK: Headset (call) profile, HQ-481: a ≤ 24 kHz output is a normal target, never a pause.
+
+    @Test("starting on a headset-profile output runs on it, the output at the buffer's rate",
+          arguments: [16_000.0, 24_000.0])
+    func startInHeadsetProfileRuns(rate: Double) throws {
+        let headset = FakeDeviceProvider.Device(id: 21, name: "AirPods (call)", sampleRate: rate)
+        let h = EngineHarness(devices: [headset], default: headset.id)
+        try h.engine.start()
+        #expect(h.engine.state == .running(headset.id))
+        #expect(h.capture.isRunning && h.output.isRunning)
+        let buffer = try #require(h.capture.buffer)
+        #expect(h.output.starts.last == .init(deviceID: headset.id, clientSampleRate: buffer.config.sampleRate,
+                                              pitchCents: PitchMode.hz432.pitchCents))
+    }
+
+    @Test("the output dropping to a headset-profile rate while on rebinds and keeps running",
+          arguments: [16_000.0, 24_000.0])
+    func headsetRateWhileOnRebinds(rate: Double) throws {
         let h = EngineHarness()
         try h.engine.start()
+        let buffer = h.capture.buffer
         h.log.calls = []
-        h.provider.setRate(speakers.id, 16_000)
+        h.provider.setRate(speakers.id, rate)
         h.settle()
-        #expect(h.engine.state == .pausedHeadset)
-        #expect(!h.capture.isRunning && !h.output.isRunning)
-        #expect(h.log.calls == ["capture.stop", "output.stop"])
+        #expect(h.engine.state == .running(speakers.id))
+        #expect(h.log.calls == ["output.stop", "output.start"])
+        #expect(h.capture.buffer === buffer)
+        #expect(h.output.starts.last?.clientSampleRate == buffer?.config.sampleRate)
+    }
 
-        h.log.calls = []
+    @Test("48 → 24 → 48 kHz on the same device stays running at every step and ends bound at 48 kHz")
+    func headsetRoundTrip() throws {
+        let h = EngineHarness()
+        var states: [EngineState] = []
+        h.engine.onStateChange = { states.append($0) }
+        try h.engine.start()
+        h.provider.setRate(speakers.id, 24_000)
+        h.settle()
+        #expect(h.engine.state == .running(speakers.id))
+        #expect(h.router.current == OutputTarget(deviceID: speakers.id, sampleRate: 24_000))
         h.provider.setRate(speakers.id, 48_000)
         h.settle()
         #expect(h.engine.state == .running(speakers.id))
-        #expect(h.log.calls == ["output.start", "capture.prepare", "capture.start"])
+        #expect(h.router.current == OutputTarget(deviceID: speakers.id, sampleRate: 48_000))
+        #expect(h.capture.isRunning && h.output.isRunning)
+        #expect(h.output.starts.last?.deviceID == speakers.id)
+        #expect(states == [.running(speakers.id)], "no other state at any step")
     }
 
-    @Test("starting while the output is in the headset profile starts paused, with nothing tapped")
-    func startInHeadsetProfile() throws {
-        let headset = FakeDeviceProvider.Device(id: 21, name: "AirPods (call)", sampleRate: 24_000)
-        let h = EngineHarness(devices: [headset], default: headset.id)
+    @Test("a wake while the output is at 24 kHz restarts both sides")
+    func wakeInHeadsetProfileRestarts() throws {
+        let h = EngineHarness()
         try h.engine.start()
-        #expect(h.engine.state == .pausedHeadset)
-        #expect(h.log.calls.isEmpty)
+        h.provider.setRate(speakers.id, 24_000)
+        h.settle()
+        h.log.calls = []
+        h.provider.wake()
+        h.settle()
+        #expect(h.log.calls == ["capture.stop", "output.stop", "output.start", "capture.prepare", "capture.start"])
+        #expect(h.engine.state == .running(speakers.id))
+    }
+
+    @Test("a headset switch that also changes the tap's rate restarts both sides and keeps running")
+    func headsetSwitchWithTapRateChange() throws {
+        let h = EngineHarness()
+        try h.engine.start()
+        h.capture.liveRate = 24_000
+        h.capture.rate = 24_000
+        h.log.calls = []
+        h.provider.setRate(speakers.id, 24_000)
+        h.settle()
+        #expect(h.log.calls == ["output.stop", "output.start", "capture.stop", "output.stop",
+                                "output.start", "capture.prepare", "capture.start"])
+        #expect(h.capture.buffer?.config.sampleRate == 24_000)
+        #expect(h.output.starts.last?.clientSampleRate == 24_000)
+        #expect(h.engine.state == .running(speakers.id))
     }
 
     @Test("output lost stops everything and waits; the next output resumes")

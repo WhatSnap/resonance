@@ -22,7 +22,14 @@ public struct DriftBufferConfig: Sendable {
 
     public init(sampleRate: Double) { self.sampleRate = sampleRate }
 
-    public var targetFillFrames: Int { Int((sampleRate * targetLatencySeconds).rounded()) }
+    /// Floor for the target, in frames. Chunks and blocks stay ~512 frames at any rate, so at a headset call rate
+    /// (16 or 24 kHz, HQ-481) 30 ms would be under one chunk plus one block. 1280 frames is 80 ms at 16 kHz; it is below
+    /// the 44.1 and 48 kHz targets, which it leaves as they were.
+    public var minTargetFillFrames: Int = 1280
+
+    public var targetFillFrames: Int {
+        max(Int((sampleRate * targetLatencySeconds).rounded()), minTargetFillFrames)
+    }
     public var lowWaterFrames: Int { targetFillFrames - bandFrames }
     public var highWaterFrames: Int { targetFillFrames + bandFrames }
 }

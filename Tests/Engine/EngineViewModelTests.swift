@@ -48,14 +48,14 @@ struct EngineViewModelTests {
         #expect(model.isEnabled && model.statusText == "On")
     }
 
-    @Test("headset profile and no output show as paused states")
-    func pausedStates() {
+    @Test("headset profile stays On; no output shows as waiting")
+    func headsetOnAndWaiting() {
         let h = EngineHarness()
         let model = EngineViewModel(engine: h.engine)
         model.setEnabled(true)
         h.provider.setRate(speakers.id, 16_000)
         h.settle()
-        #expect(model.statusText == "Paused while the headset is in call mode")
+        #expect(model.statusText == "On")
         h.provider.setRate(speakers.id, 48_000)
         h.provider.disconnect(speakers.id)
         h.provider.setDefault(nil)

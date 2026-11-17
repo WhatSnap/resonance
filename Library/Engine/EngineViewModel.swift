@@ -81,8 +81,6 @@ public final class EngineViewModel: ObservableObject {
         case .running:
             statusText = "On"
             errorMessage = nil
-        case .pausedHeadset:
-            statusText = "Paused while the headset is in call mode"
         case .waitingForOutput:
             statusText = "Waiting for an output device"
         case .failed(let message):
