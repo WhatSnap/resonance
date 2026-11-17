@@ -8,7 +8,8 @@ import Foundation
 ///
 /// - Rebind (default output or its rate changed): only the output restarts, on the same buffer. If the tap's own
 ///   rate changed with it, everything restarts.
-/// - Headset profile (≤ 24 kHz): both sides stop; audio plays untouched until the rate goes back up.
+/// - Headset profile (≤ 24 kHz, a Bluetooth headset in call mode): a normal target. It rebinds like any rate change
+///   and keeps shifting, so a call is heard shifted too (HQ-481).
 /// - Output lost: both sides stop until the router names a usable output.
 /// - Wake: both sides restart from scratch (a fresh tap), since sleep is when taps go stale.
 /// - Silence watchdog: zeros count only while a captured process is running audio output, so a pause (nothing
@@ -117,7 +118,7 @@ public final class ShiftEngine {
     }
 
     private func routerWake(_ target: OutputTarget?) {
-        guard case .running = state, let target, !target.isHeadsetProfile else { return }
+        guard case .running = state, let target else { return }
         perform {
             stopIO()
             try startIO(target)
@@ -136,10 +137,7 @@ public final class ShiftEngine {
     // MARK: IO
 
     private func apply(_ target: OutputTarget) throws {
-        if target.isHeadsetProfile {
-            stopIO()
-            state = .pausedHeadset
-        } else if capture.isRunning, let buffer {
+        if capture.isRunning, let buffer {
             try rebindOutput(target, buffer: buffer)
         } else {
             try startIO(target)

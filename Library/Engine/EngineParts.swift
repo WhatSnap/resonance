@@ -50,8 +50,6 @@ public enum EngineState: Equatable, Sendable {
     case off
     /// Shifting, playing on this device.
     case running(DeviceID)
-    /// The output is in the Bluetooth headset (call) profile: nothing is tapped, audio plays untouched.
-    case pausedHeadset
     /// No usable output device right now: nothing is tapped.
     case waitingForOutput
     /// Stopped by an error. When it happened during a device change, the next change retries.
