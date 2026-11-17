@@ -39,10 +39,25 @@ RW_DMG="${WORK_DIR}/rw.dmg"
 MOUNT="${WORK_DIR}/mnt"
 hdiutil create -volname "Resonance" -srcfolder "${STAGING}" -ov -format UDRW "${RW_DMG}" >&2
 mkdir -p "${MOUNT}"
+
+# If any step fails while the read-write image is attached, detach it on the way out (HQ-472).
+ATTACHED=""
+detach_on_exit() {
+  if [ -n "${ATTACHED}" ]; then
+    hdiutil detach -force "${MOUNT}" >&2 || echo "build-dmg: error: could not detach ${MOUNT}" >&2
+  fi
+}
+trap detach_on_exit EXIT
+trap 'exit 130' INT TERM
+
 # -nobrowse: mounted out of sight, no Finder window, no desktop icon.
 hdiutil attach -nobrowse -noautoopen -mountpoint "${MOUNT}" "${RW_DMG}" >&2
-SetFile -a C "${MOUNT}" 2>/dev/null || true
+ATTACHED=1
+if ! SetFile -a C "${MOUNT}" 2>/dev/null; then
+  echo "build-dmg: warning: SetFile failed (Xcode Command Line Tools missing?); the volume keeps the generic icon" >&2
+fi
 hdiutil detach "${MOUNT}" >&2
+ATTACHED=""
 hdiutil convert "${RW_DMG}" -format UDZO -o "${DMG_PATH}" >&2
 rm -rf "${WORK_DIR}"
 
