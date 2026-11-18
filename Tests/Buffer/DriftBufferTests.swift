@@ -122,6 +122,34 @@ struct DriftSimulation {
         #expect(config.lowWaterFrames > 0)
     }
 
+    /// HQ-481: a headset in call mode runs at 16 or 24 kHz. Chunks and blocks stay ~512 frames there, so the target
+    /// is floored in frames: a valid band (no init trap) and room for one chunk plus one block.
+    @Test(arguments: [16_000.0, 24_000.0])
+    func headsetRatesHaveAValidBand(rate: Double) {
+        let config = DriftBufferConfig(sampleRate: rate)
+        #expect(config.lowWaterFrames > 0)
+        #expect(config.targetFillFrames > 512 + 512)
+        #expect(config.highWaterFrames < config.capacityFrames)
+    }
+
+    @Test(arguments: [16_000.0, 24_000.0])
+    func headsetRatesRunTenMinutesWithoutUnderruns(rate: Double) {
+        let config = DriftBufferConfig(sampleRate: rate)
+        let buffer = DriftCompensatedBuffer(config: config)
+        var sim = DriftSimulation(producerRate: rate, consumerRate: rate + rate / 48_000, seconds: tenMinutes)
+        sim.toneHz = 100
+        let r = sim.run(buffer)
+        #expect(r.primed)
+        #expect(r.underruns == 0 && r.droppedChunks == 0)
+        #expect(r.minFill >= config.lowWaterFrames && r.maxFill <= config.highWaterFrames)
+    }
+
+    /// The floor leaves the music rates where they were.
+    @Test func musicRatesKeepTheirTarget() {
+        #expect(DriftBufferConfig(sampleRate: 48_000).targetFillFrames == 1440)
+        #expect(DriftBufferConfig(sampleRate: 44_100).targetFillFrames == 1323)
+    }
+
     /// Equal clocks: after the start-up transient the ratio settles at 1 (within 1 ppm).
     @Test func equalClocksSettleAtRatioOne() {
         let buffer = DriftCompensatedBuffer(config: config)
