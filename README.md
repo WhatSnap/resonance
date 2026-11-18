@@ -17,57 +17,47 @@ When you tune to 432Hz, you do not simply create music—you create a sanctuary 
 
 ## 🚀 Features
 
-- **System-Wide Tuning**: Processes all macOS audio through a high-precision 432Hz pitch shifter.
-- **Low Latency**: Built on a custom CoreAudio `AUGraph` architecture with a lock-free ring buffer for real-time performance.
-- **Guided Onboarding**: A beautiful setup wizard to help you configure the required virtual audio driver.
-- **Menu Bar Utility**: Stay in the flow with a lightweight menu bar interface.
-- **Native Performance**: Pure Swift implementation leveraging Apple's `NewTimePitch` AudioUnit for superior quality.
+- **System-Wide Tuning**: Retunes everything your Mac plays, with Apple's `NewTimePitch` AudioUnit.
+- **Follows Your Output**: Plays on whatever output macOS is using (speakers, AirPods, a USB DAC) and follows it when it changes. Volume keys keep working.
+- **Nothing to Install Besides the App**: No virtual audio driver, no Audio MIDI Setup.
+- **Menu Bar Utility**: Stay in the flow with a lightweight menu bar interface. Open at login is optional.
 
 ---
 
 ## 🛠️ Installation
 
-### 1. Install Audio Driver (Required)
-Resonance captures system audio using the **BlackHole** virtual audio driver. 
-- Install via Homebrew: `brew install blackhole-2ch`.
+Requires macOS 14.4 or later.
 
-### 2. Configure Multi-Output Device
-To hear your tuned audio, you must create a Multi-Output device in **Audio MIDI Setup**:
-1. Open **Audio MIDI Setup**.
-2. Click **+** → **Create Multi-Output Device**.
-3. Check both **BlackHole 2ch** and your **Output Device** (e.g., AirPods Max, Speakers).
-4. Set your System Output to this new Multi-Output Device.
-
-### 3. Run Resonance
-1. Launch Resonance.
-2. Select your actual output device (e.g., AirPods Max) from the menu bar picker.
-3. Click **Enable**.
+1. Download `Resonance-2.0.dmg` from the [latest release](https://github.com/WhatSnap/resonance/releases/latest).
+2. Open the DMG and drag Resonance.app to Applications.
+3. Open Resonance. The app is not notarized yet, so the first time macOS blocks it: go to
+   **System Settings → Privacy & Security**, scroll down, click **Open Anyway** next to Resonance, and confirm.
+4. Allow audio recording when macOS asks (once).
+5. Turn it on from the menu bar icon.
 
 ---
 
 ## 🧠 Technical Architecture
 
-Resonance uses a sophisticated "Pull Pattern" to bypass the limitations of high-level frameworks like `AVAudioEngine`:
-
-- **Push Stage**: A standalone `AUHAL` unit captures audio from BlackHole and pushes it into a deinterleaved ring buffer.
-- **Pull Stage**: A CoreAudio `AUGraph` pulls from the ring buffer, applies the pitch shift, and renders to the hardware output.
-- **Format**: All processing is done in **32-bit Float Non-Interleaved** at the device's native sample rate to ensure maximum fidelity.
+- **Capture**: A Core Audio process tap captures what other apps play and mutes the original, so you hear only the retuned audio.
+- **Buffer**: A single-producer, single-consumer ring buffer between the tap and the output. Its read and write paths use atomics only: no locks and no allocation on the audio threads (`scripts/check-realtime.sh` checks the release build).
+- **Output**: An AUHAL unit renders through `NewTimePitch` to the current default output, in **32-bit Float Non-Interleaved** at the device's native sample rate. Clock drift between the two devices is absorbed by the buffer.
 
 ---
 
 ## 🛠️ Development
 
 ### Prerequisites
-- macOS 13.0+
-- Xcode 15+ / Swift 6.0
+- macOS 14.4+
+- Swift 6.1 (Command Line Tools are enough)
 
-### Build
+### Build and test
 ```bash
-swift build -c release
+./scripts/test.sh
+./scripts/build-app.sh      # builds Resonance.app into .build/app
 ```
 
 ### Create DMG
-The project includes a custom distribution script:
 ```bash
 ./build-dmg.sh
 ```

@@ -1,153 +1,82 @@
+import ResonanceCore
 import SwiftUI
-import AudioToolbox
 
+/// The whole UI: one switch, the tuning, the status, and any engine error. Audio plays on whatever output macOS
+/// uses, so there is no device picker.
 struct MenuBarView: View {
-    @EnvironmentObject var audioEngine: AudioEngine
-    @Environment(\.openWindow) var openWindow
-    @AppStorage("setupComplete") private var setupComplete = false
-    @State private var showStartError = false
-    @State private var startErrorMessage = ""
-    
+    @EnvironmentObject var model: EngineViewModel
+    @EnvironmentObject var openAtLogin: OpenAtLoginModel
+
     var body: some View {
-        VStack(spacing: 12) {
-            // Status header
+        VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Circle()
-                    .fill(audioEngine.isEnabled ? Color.green : Color.gray)
+                    .fill(model.isEnabled && model.errorMessage == nil ? Color.green : Color.gray)
                     .frame(width: 8, height: 8)
-                
-                Text(audioEngine.isEnabled ? "Resonance Active" : "Resonance Inactive")
-                    .font(.headline)
-                
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Resonance").font(.headline)
+                    Text(model.statusText).font(.caption).foregroundColor(.secondary)
+                }
                 Spacer()
-                
-                Button(audioEngine.isEnabled ? "Disable" : "Enable") {
-                    toggleAudio()
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(audioEngine.isEnabled ? .gray : .accentColor)
-                .disabled(audioEngine.isStarting)
+                Toggle("", isOn: Binding(get: { model.isEnabled }, set: { model.setEnabled($0) }))
+                    .toggleStyle(.switch)
+                    .labelsHidden()
             }
-            
-            Divider()
-            
-            // Device selector
-            if audioEngine.blackHoleAvailable {
-                HStack {
-                    Text("Output:")
-                    Picker("", selection: $audioEngine.selectedDeviceID) {
-                        ForEach(audioEngine.availableDevices, id: \.id) { device in
-                            Text(device.name).tag(device.id)
-                        }
-                    }
-                    .labelsHidden()
-                    .onChange(of: audioEngine.selectedDeviceID) { _ in
-                        // Restart engine if active to switch output device instantly
-                        if audioEngine.isEnabled {
-                            do {
-                                try audioEngine.start()
-                            } catch {
-                                startErrorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-                                showStartError = true
-                            }
-                        }
-                    }
-                }
-                
-                HStack {
-                    Text("Tune:")
-                    Picker("", selection: $audioEngine.pitchMode) {
-                        ForEach(AudioEngine.PitchMode.allCases) { mode in
-                            Text(mode.title).tag(mode)
-                        }
-                    }
-                    .labelsHidden()
-                    .onChange(of: audioEngine.pitchMode) { _ in
-                        do {
-                            try audioEngine.applyPitchMode()
-                        } catch {
-                            startErrorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-                            showStartError = true
-                        }
-                    }
-                }
-                
-                Text(audioEngine.pitchMode == .hz432
-                     ? "Tip: Try “Demo” to make the change obvious, then switch back to 432Hz."
-                     : "Demo is for verification. Switch back to 432Hz for normal use.")
-                .font(.caption2)
-                .foregroundColor(.secondary)
-            } else {
-                // BlackHole not installed warning
-                VStack(spacing: 8) {
-                    HStack {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundColor(.orange)
-                        Text("Audio driver not found")
-                            .font(.callout)
-                    }
-                    
-                    Button("Run Setup...") {
-                        openWindow(id: "setup")
-                        NSApp.activate(ignoringOtherApps: true)
-                    }
+
+            if let error = model.errorMessage {
+                Label(error, systemImage: "exclamationmark.triangle.fill")
                     .font(.caption)
-                }
-                .padding(8)
-                .background(Color.orange.opacity(0.1))
-                .cornerRadius(6)
+                    .foregroundColor(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            
+            if let notice = model.notice {
+                Text(notice)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
             Divider()
-            
-            // Footer buttons
+
             HStack {
-                Button("Preferences") {
-                    NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+                Text("Tune:")
+                Picker("", selection: $model.pitchMode) {
+                    ForEach(PitchMode.allCases) { mode in
+                        Text(mode.title).tag(mode)
+                    }
                 }
-                
+                .labelsHidden()
+            }
+
+            Divider()
+
+            Toggle("Open at login", isOn: Binding(get: { openAtLogin.isOn }, set: { openAtLogin.set($0) }))
+                .toggleStyle(.switch)
+                .controlSize(.small)
+            if let error = openAtLogin.errorMessage {
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundColor(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Divider()
+
+            HStack {
                 Spacer()
-                
                 Button("Quit") {
+                    model.shutdown()
                     NSApp.terminate(nil)
                 }
+                .font(.caption)
             }
-            .font(.caption)
         }
         .padding()
         .frame(width: 280)
-        .task {
-            // Auto-launch the setup wizard on first run (once per app session)
-            guard !setupComplete, !audioEngine.hasAttemptedAutoSetup else { return }
-            audioEngine.hasAttemptedAutoSetup = true
-            
-            // Short delay to ensure the menu bar icon is settled
-            try? await Task.sleep(nanoseconds: 500_000_000)
-            
-            openWindow(id: "setup")
-            NSApp.activate(ignoringOtherApps: true)
-        }
-        .alert("Unable to Enable", isPresented: $showStartError) {
-            Button("Run Setup…") {
-                openWindow(id: "setup")
-                NSApp.activate(ignoringOtherApps: true)
-            }
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(startErrorMessage)
-        }
-    }
-    
-    private func toggleAudio() {
-        if audioEngine.isEnabled {
-            audioEngine.stop()
-        } else {
-            do {
-                try audioEngine.start()
-            } catch {
-                startErrorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-                showStartError = true
-            }
+        // The menu window may be kept between openings, so read the login item again each time it comes up.
+        .onAppear { openAtLogin.refresh() }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
+            openAtLogin.refresh()
         }
     }
 }
